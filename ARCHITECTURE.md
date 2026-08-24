@@ -60,6 +60,8 @@ Each maintained Rust project owns its own dependency resolution and lockfile unl
 
 The repository root is reserved for repository authority and validation tooling. Lab projects are not automatically members of the root Cargo workspace.
 
+When the first project establishes a concrete maintained shape, its accepted change also extends repository validation with the minimum checks needed to enforce that shape. Future project classes add validation only when their real requirements differ; the bootstrap does not pre-author speculative project machinery.
+
 ## Dependency policy
 
 Maintained projects consume immutable accepted dependencies:
