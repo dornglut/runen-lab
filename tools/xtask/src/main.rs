@@ -8,10 +8,12 @@ const REQUIRED_FILES: &[&str] = &[
     "AGENTS.md",
     "ARCHITECTURE.md",
     "TESTING.md",
+    "LICENSE",
     "Cargo.toml",
     "Cargo.lock",
     "rust-toolchain.toml",
     ".cargo/config.toml",
+    ".github/workflows/validate.yml",
     "tools/xtask/Cargo.toml",
     "tools/xtask/src/main.rs",
 ];
@@ -41,9 +43,17 @@ fn validate() -> Result<(), String> {
     check_markdown_links(&root)?;
     check_projects(&root)?;
 
-    run(&root, "cargo", &["metadata", "--locked", "--format-version=1", "--no-deps"])?;
+    run(
+        &root,
+        "cargo",
+        &["metadata", "--locked", "--format-version=1", "--no-deps"],
+    )?;
     run(&root, "cargo", &["fmt", "--all", "--", "--check"])?;
-    run(&root, "cargo", &["test", "--workspace", "--all-targets", "--locked"])?;
+    run(
+        &root,
+        "cargo",
+        &["test", "--workspace", "--all-targets", "--locked"],
+    )?;
     run(
         &root,
         "cargo",
@@ -104,7 +114,7 @@ fn check_required_files(root: &Path) -> Result<(), String> {
 
 fn check_markdown_links(root: &Path) -> Result<(), String> {
     let mut markdown = Vec::new();
-    collect_markdown(root, root, &mut markdown)?;
+    collect_markdown(root, &mut markdown)?;
     for file in markdown {
         let text = fs::read_to_string(&file)
             .map_err(|error| format!("failed to read {}: {error}", file.display()))?;
@@ -133,22 +143,24 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_markdown(root: &Path, dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
+fn collect_markdown(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
     for entry in fs::read_dir(dir)
         .map_err(|error| format!("failed to read {}: {error}", dir.display()))?
     {
         let entry = entry.map_err(|error| format!("failed to read directory entry: {error}"))?;
         let path = entry.path();
-        if path.file_name().is_some_and(|name| name == ".git" || name == "target") {
+        if path
+            .file_name()
+            .is_some_and(|name| name == ".git" || name == "target")
+        {
             continue;
         }
         if path.is_dir() {
-            collect_markdown(root, &path, output)?;
+            collect_markdown(&path, output)?;
         } else if path.extension().is_some_and(|extension| extension == "md") {
             output.push(path);
         }
     }
-    let _ = root;
     Ok(())
 }
 
@@ -180,6 +192,7 @@ fn check_projects(root: &Path) -> Result<(), String> {
         if !project.is_dir() {
             continue;
         }
+
         let manifest = project.join("Cargo.toml");
         if !manifest.is_file() {
             continue;
@@ -190,22 +203,94 @@ fn check_projects(root: &Path) -> Result<(), String> {
                 project.strip_prefix(root).unwrap_or(&project).display()
             ));
         }
+
         let manifest_text = fs::read_to_string(&manifest)
             .map_err(|error| format!("failed to read {}: {error}", manifest.display()))?;
-        if manifest_text.lines().any(|line| line.contains("path =")) {
+        check_dependency_policy(root, &manifest, &manifest_text)?;
+        validate_rust_project(&project)?;
+    }
+
+    Ok(())
+}
+
+fn check_dependency_policy(root: &Path, manifest: &Path, text: &str) -> Result<(), String> {
+    let display = manifest.strip_prefix(root).unwrap_or(manifest).display();
+    let mut table_git_without_rev = false;
+
+    for raw_line in text.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with('[') {
+            if table_git_without_rev {
+                return Err(format!(
+                    "maintained Lab project uses an unpinned Git dependency: {display}"
+                ));
+            }
+            table_git_without_rev = false;
+            continue;
+        }
+
+        if line.contains("path =") {
             return Err(format!(
-                "maintained Lab project uses a path dependency: {}",
-                manifest.strip_prefix(root).unwrap_or(&manifest).display()
+                "maintained Lab project uses a path dependency: {display}"
             ));
         }
-        if manifest_text.lines().any(|line| line.contains("branch =")) {
+        if line.contains("branch =") {
             return Err(format!(
-                "maintained Lab project uses a moving branch dependency: {}",
-                manifest.strip_prefix(root).unwrap_or(&manifest).display()
+                "maintained Lab project uses a moving branch dependency: {display}"
             ));
+        }
+
+        if line.starts_with("git =") {
+            table_git_without_rev = true;
+        } else if line.contains("git =") && !line.contains("rev =") {
+            return Err(format!(
+                "maintained Lab project uses an unpinned Git dependency: {display}"
+            ));
+        }
+
+        if line.starts_with("rev =") {
+            table_git_without_rev = false;
         }
     }
 
+    if table_git_without_rev {
+        return Err(format!(
+            "maintained Lab project uses an unpinned Git dependency: {display}"
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_rust_project(project: &Path) -> Result<(), String> {
+    run(
+        project,
+        "cargo",
+        &["metadata", "--locked", "--format-version=1", "--no-deps"],
+    )?;
+    run(project, "cargo", &["fmt", "--all", "--", "--check"])?;
+    run(
+        project,
+        "cargo",
+        &["test", "--workspace", "--all-targets", "--locked"],
+    )?;
+    run(
+        project,
+        "cargo",
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
     Ok(())
 }
 
