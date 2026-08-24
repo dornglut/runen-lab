@@ -46,12 +46,7 @@ fn validate() -> Result<(), String> {
     run(
         &root,
         "cargo",
-        &[
-            "metadata",
-            "--locked",
-            "--format-version=1",
-            "--no-deps",
-        ],
+        &["metadata", "--locked", "--format-version=1", "--no-deps"],
     )?;
     run(&root, "cargo", &["fmt", "--all", "--", "--check"])?;
     run(
@@ -275,12 +270,7 @@ fn validate_rust_project(project: &Path) -> Result<(), String> {
     run(
         project,
         "cargo",
-        &[
-            "metadata",
-            "--locked",
-            "--format-version=1",
-            "--no-deps",
-        ],
+        &["metadata", "--locked", "--format-version=1", "--no-deps"],
     )?;
     run(project, "cargo", &["fmt", "--all", "--", "--check"])?;
     run(
