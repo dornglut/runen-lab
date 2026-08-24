@@ -46,7 +46,12 @@ fn validate() -> Result<(), String> {
     run(
         &root,
         "cargo",
-        &["metadata", "--locked", "--format-version=1", "--no-deps"],
+        &[
+            "metadata",
+            "--locked",
+            "--format-version=1",
+            "--no-deps",
+        ],
     )?;
     run(&root, "cargo", &["fmt", "--all", "--", "--check"])?;
     run(
@@ -144,8 +149,8 @@ fn check_markdown_links(root: &Path) -> Result<(), String> {
 }
 
 fn collect_markdown(dir: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(dir)
-        .map_err(|error| format!("failed to read {}: {error}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).map_err(|error| format!("failed to read {}: {error}", dir.display()))?
     {
         let entry = entry.map_err(|error| format!("failed to read directory entry: {error}"))?;
         let path = entry.path();
@@ -184,8 +189,8 @@ fn check_projects(root: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    for entry in fs::read_dir(&projects)
-        .map_err(|error| format!("failed to read projects/: {error}"))?
+    for entry in
+        fs::read_dir(&projects).map_err(|error| format!("failed to read projects/: {error}"))?
     {
         let entry = entry.map_err(|error| format!("failed to read project entry: {error}"))?;
         let project = entry.path();
@@ -270,7 +275,12 @@ fn validate_rust_project(project: &Path) -> Result<(), String> {
     run(
         project,
         "cargo",
-        &["metadata", "--locked", "--format-version=1", "--no-deps"],
+        &[
+            "metadata",
+            "--locked",
+            "--format-version=1",
+            "--no-deps",
+        ],
     )?;
     run(project, "cargo", &["fmt", "--all", "--", "--check"])?;
     run(
