@@ -21,7 +21,9 @@ Projects do not become framework acceptance authority merely because they exerci
 - [Architecture](ARCHITECTURE.md) — Lab boundary, dependency direction, and project model.
 - [Testing](TESTING.md) — canonical mechanical validation.
 - [Agent instructions](AGENTS.md) — automation-specific constraints.
-- [Bootstrap issue #1](https://github.com/dornglut/runen-lab/issues/1) — current bounded repository-bootstrap work.
+- [Contribution guidance](https://github.com/dornglut/.github/blob/main/CONTRIBUTING.md) — inherited Dornglut contribution defaults.
+- [Security policy](https://github.com/dornglut/.github/blob/main/SECURITY.md) — inherited Dornglut security routing.
+- [License](LICENSE) — MIT.
 
 Canonical validation:
 
