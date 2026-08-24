@@ -6,7 +6,7 @@ The repository is intentionally **not** a framework, specification, or cross-fra
 
 ## Maturity
 
-Runen Lab is currently **planned**. Repository authority and validation are being established before the first accepted Lab project.
+Runen Lab is currently **planned**. The repository establishes authority and validation before admitting its first Lab project.
 
 No Lab project is accepted yet, and this repository does not imply that planned Runen frameworks are externally consumable before their owning extraction/release gates are accepted.
 
