@@ -23,7 +23,7 @@ Projects do not become framework acceptance authority merely because they exerci
 - [Agent instructions](AGENTS.md) — automation-specific constraints.
 - [Contribution guidance](https://github.com/dornglut/.github/blob/main/CONTRIBUTING.md) — inherited Dornglut contribution defaults.
 - [Security policy](https://github.com/dornglut/.github/blob/main/SECURITY.md) — inherited Dornglut security routing.
-- [License](LICENSE) — MIT.
+- [License](LICENSE) — GNU General Public License version 3 only (`GPL-3.0-only`).
 
 Canonical validation:
 
