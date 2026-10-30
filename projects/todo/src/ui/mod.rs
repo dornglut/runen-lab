@@ -238,13 +238,28 @@ mod tests {
         );
         assert!(storage.load().unwrap().tasks()[0].completed());
 
-        // A programmatic caller invokes the same live application service.
-        assert_eq!(
-            state.service.execute(TodoCommand::Remove { id }).unwrap(),
-            crate::model::TodoOutcome::Removed(id),
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetCompleted {
+                id,
+                completed: false,
+            },
         );
+        assert!(!storage.load().unwrap().tasks()[0].completed());
+
+        let _ = TodoUi::update(&mut state, TodoAction::RemoveTask(id));
         assert!(state.service.tasks().is_empty());
         assert!(storage.load().unwrap().tasks().is_empty());
+
+        // A programmatic caller invokes the same live application service.
+        state
+            .service
+            .execute(TodoCommand::Add {
+                title: "Programmatic".into(),
+            })
+            .unwrap();
+        assert_eq!(state.service.tasks()[0].title(), "Programmatic");
+        assert_eq!(storage.load().unwrap().tasks()[0].title(), "Programmatic");
 
         std::fs::remove_file(path).unwrap();
     }

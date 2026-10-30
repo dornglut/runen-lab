@@ -103,4 +103,23 @@ mod tests {
 
         std::fs::remove_file(path).unwrap();
     }
+
+    #[test]
+    fn rejected_persistence_does_not_publish_candidate_mutation() {
+        let path = std::env::temp_dir().join(format!(
+            "runen-lab-todo-service-{}-{}.json",
+            std::process::id(),
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
+        ));
+        let mut service = TodoService::at(TodoStorage::at(path.clone())).unwrap();
+        // A directory at the output path prevents replacing it with task data.
+        std::fs::create_dir(&path).unwrap();
+        let error = service.execute(TodoCommand::Add {
+            title: "Must not appear".into(),
+        });
+        assert!(matches!(error, Err(TodoApplyError::Persistence(_))));
+        assert!(service.tasks().is_empty());
+        assert!(path.is_dir());
+        std::fs::remove_dir(path).unwrap();
+    }
 }
