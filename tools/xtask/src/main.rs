@@ -75,9 +75,20 @@ fn validate() -> Result<(), String> {
     run(
         &root,
         "cargo",
-        &["metadata", "--manifest-path", TODO, "--locked", "--format-version=1", "--no-deps"],
+        &[
+            "metadata",
+            "--manifest-path",
+            TODO,
+            "--locked",
+            "--format-version=1",
+            "--no-deps",
+        ],
     )?;
-    run(&root, "cargo", &["fmt", "--manifest-path", TODO, "--", "--check"])?;
+    run(
+        &root,
+        "cargo",
+        &["fmt", "--manifest-path", TODO, "--", "--check"],
+    )?;
     run(
         &root,
         "cargo",

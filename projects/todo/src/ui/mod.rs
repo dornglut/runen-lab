@@ -1,7 +1,7 @@
 mod host;
 
-use crate::model::{TaskId, TodoCommand, TodoList, TodoOutcome};
-use crate::storage::TodoStorage;
+use crate::model::{TaskId, TodoCommand};
+use crate::service::TodoService;
 use runenui_core::{
     Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, NoHostProtocol,
     SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision,
@@ -16,8 +16,7 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 pub struct TodoUi;
 
 pub struct TodoUiState {
-    tasks: TodoList,
-    storage: TodoStorage,
+    service: TodoService,
     draft: String,
     draft_revision: u64,
     draft_selection: usize,
@@ -26,15 +25,12 @@ pub struct TodoUiState {
 
 impl TodoUiState {
     pub fn load() -> anyhow::Result<Self> {
-        let storage = TodoStorage::from_environment()?;
-        let tasks = storage.load()?;
-        Ok(Self::new(storage, tasks))
+        Ok(Self::new(TodoService::load()?))
     }
 
-    fn new(storage: TodoStorage, tasks: TodoList) -> Self {
+    fn new(service: TodoService) -> Self {
         Self {
-            tasks,
-            storage,
+            service,
             draft: String::new(),
             draft_revision: 0,
             draft_selection: 0,
@@ -49,26 +45,12 @@ impl TodoUiState {
         )
     }
 
-    /// Persist the candidate before publishing its state into the UI.
-    /// This single-user application intentionally has one synchronous local writer.
     fn execute(&mut self, command: TodoCommand) -> bool {
-        let mut candidate = self.tasks.clone();
-        match candidate.execute(command) {
-            Ok(TodoOutcome::Unchanged(_)) => {
+        match self.service.execute(command) {
+            Ok(_) => {
                 self.error = None;
                 true
             }
-            Ok(_) => match self.storage.save(&candidate) {
-                Ok(()) => {
-                    self.tasks = candidate;
-                    self.error = None;
-                    true
-                }
-                Err(error) => {
-                    self.error = Some(format!("Could not save tasks: {error}"));
-                    false
-                }
-            },
             Err(error) => {
                 self.error = Some(error.to_string());
                 false
@@ -129,10 +111,10 @@ impl UiApp for TodoUi {
             .into_element(),
         ];
 
-        if state.tasks.tasks().is_empty() {
+        if state.service.tasks().is_empty() {
             content.push(text("No tasks yet.").key("todo.empty").into_element());
         } else {
-            for task in state.tasks.tasks() {
+            for task in state.service.tasks() {
                 let id = task.id();
                 let completed = task.completed();
                 let label = if completed {
@@ -223,6 +205,7 @@ impl UiApp for TodoUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::TodoStorage;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -235,28 +218,27 @@ mod tests {
             NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
         ));
         let storage = TodoStorage::at(path.clone());
-        let mut state = TodoUiState::new(storage.clone(), TodoList::default());
+        let mut state = TodoUiState::new(TodoService::at(storage.clone()).unwrap());
 
         state.draft = "Created from UI".into();
         state.draft_selection = state.draft.len();
         let _ = TodoUi::update(&mut state, TodoAction::AddTask);
-        assert_eq!(state.tasks.tasks().len(), 1);
-        assert_eq!(state.tasks.tasks()[0].title(), "Created from UI");
+        assert_eq!(state.service.tasks().len(), 1);
+        assert_eq!(state.service.tasks()[0].title(), "Created from UI");
 
-        let id = state.tasks.tasks()[0].id();
+        let id = state.service.tasks()[0].id();
         let _ = TodoUi::update(
             &mut state,
             TodoAction::SetCompleted { id, completed: true },
         );
         assert!(storage.load().unwrap().tasks()[0].completed());
 
-        // A programmatic caller uses the exact same typed task operation.
-        let mut programmatic = storage.load().unwrap();
+        // A programmatic caller invokes the same live application service.
         assert_eq!(
-            programmatic.execute(TodoCommand::Remove { id }).unwrap(),
-            TodoOutcome::Removed(id),
+            state.service.execute(TodoCommand::Remove { id }).unwrap(),
+            crate::model::TodoOutcome::Removed(id),
         );
-        storage.save(&programmatic).unwrap();
+        assert!(state.service.tasks().is_empty());
         assert!(storage.load().unwrap().tasks().is_empty());
 
         std::fs::remove_file(path).unwrap();
@@ -270,13 +252,13 @@ mod tests {
             NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
         ));
         let storage = TodoStorage::at(path.clone());
-        let mut state = TodoUiState::new(storage, TodoList::default());
+        let mut state = TodoUiState::new(TodoService::at(storage).unwrap());
         state.draft = " ".into();
         state.draft_selection = state.draft.len();
 
         let _ = TodoUi::update(&mut state, TodoAction::AddTask);
         assert_eq!(state.draft, " ");
-        assert!(state.tasks.tasks().is_empty());
+        assert!(state.service.tasks().is_empty());
         assert!(state.error.is_some());
         assert!(!path.exists());
     }

@@ -42,6 +42,7 @@ application owner, not independently modify its backing file.
 ## Architecture and limits
 
 - `model.rs`: typed task commands, stable task IDs, validation, and read-only task inspection.
+- `service.rs`: single application-owned execution and persistence transaction boundary.
 - `storage.rs`: bounded versioned JSON persistence and replacement writes.
 - `ui/mod.rs`: typed RunenUI actions and UI-only draft editing.
 - `ui/host.rs`, `rendering.rs`, `window.rs`: current Engine hosting compatibility.

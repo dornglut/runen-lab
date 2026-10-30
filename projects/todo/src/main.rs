@@ -1,5 +1,6 @@
 mod application;
 mod model;
+mod service;
 mod storage;
 mod rendering;
 mod ui;
