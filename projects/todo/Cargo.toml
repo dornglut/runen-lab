@@ -7,6 +7,8 @@ license = "GPL-3.0-only"
 [dependencies]
 engine = { git = "https://github.com/dornglut/runenwerk", rev = "d7b0aaa0b52b67cf8eaa9f5a2238fbf09c8a8933", version = "0.1.0" }
 anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 runenui_core = { git = "https://github.com/dornglut/runen-ui", rev = "712d9240052cde9dd2ece2516d28f599d3f2465d", version = "0.1.0" }
 
 [lints.rust]

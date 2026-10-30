@@ -6,7 +6,7 @@ use engine::plugins::ui::{
 use engine::prelude::*;
 use runenui_core::{FontFamilyName, GenericFontFamily, StyleEnvironment};
 
-use super::TodoUi;
+use super::{TodoUi, TodoUiState};
 
 pub fn install(app: &mut App) -> anyhow::Result<()> {
     let font_bytes = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?;
@@ -16,9 +16,10 @@ pub fn install(app: &mut App) -> anyhow::Result<()> {
         vec![FontFamilyName::new("Segoe UI")?],
     );
 
+    let state = TodoUiState::load()?;
     let mount = app
         .ui()
-        .mount_app::<TodoUi>(UiTypedScreenId::new("todo.main"), (), &fonts);
+        .mount_app::<TodoUi>(UiTypedScreenId::new("todo.main"), state, &fonts);
 
     let slot = mount
         .slot_id()

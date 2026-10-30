@@ -3186,6 +3186,8 @@ dependencies = [
  "anyhow",
  "engine",
  "runenui_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
