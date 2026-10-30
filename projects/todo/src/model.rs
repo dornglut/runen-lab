@@ -67,7 +67,10 @@ pub enum TodoError {
 impl fmt::Display for TodoError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidTitle => write!(f, "task title must contain 1–{MAX_TITLE_CHARS} printable characters"),
+            Self::InvalidTitle => write!(
+                f,
+                "task title must contain 1–{MAX_TITLE_CHARS} printable characters"
+            ),
             Self::TooManyTasks => write!(f, "task limit of {MAX_TASKS} reached"),
             Self::IdExhausted => f.write_str("task identity space exhausted"),
             Self::UnknownTask(id) => write!(f, "task {} does not exist", id.get()),
@@ -120,7 +123,11 @@ impl TodoList {
                 Ok(TodoOutcome::Added(id))
             }
             TodoCommand::SetCompleted { id, completed } => {
-                let task = self.tasks.iter_mut().find(|task| task.id == id).ok_or(TodoError::UnknownTask(id))?;
+                let task = self
+                    .tasks
+                    .iter_mut()
+                    .find(|task| task.id == id)
+                    .ok_or(TodoError::UnknownTask(id))?;
                 if task.completed == completed {
                     return Ok(TodoOutcome::Unchanged(id));
                 }
@@ -128,7 +135,11 @@ impl TodoList {
                 Ok(TodoOutcome::Updated(id))
             }
             TodoCommand::Remove { id } => {
-                let position = self.tasks.iter().position(|task| task.id == id).ok_or(TodoError::UnknownTask(id))?;
+                let position = self
+                    .tasks
+                    .iter()
+                    .position(|task| task.id == id)
+                    .ok_or(TodoError::UnknownTask(id))?;
                 self.tasks.remove(position);
                 Ok(TodoOutcome::Removed(id))
             }
@@ -141,7 +152,9 @@ impl TodoList {
             return Err(TodoError::InvalidStoredState("unsupported storage version"));
         }
         if self.next_id == 0 {
-            return Err(TodoError::InvalidStoredState("next task ID must be positive"));
+            return Err(TodoError::InvalidStoredState(
+                "next task ID must be positive",
+            ));
         }
         if self.tasks.len() > MAX_TASKS {
             return Err(TodoError::InvalidStoredState("too many tasks"));
@@ -149,7 +162,9 @@ impl TodoList {
         let mut ids = HashSet::with_capacity(self.tasks.len());
         for task in &self.tasks {
             if task.id.get() == 0 || task.id.get() >= self.next_id || !ids.insert(task.id) {
-                return Err(TodoError::InvalidStoredState("invalid or duplicate task ID"));
+                return Err(TodoError::InvalidStoredState(
+                    "invalid or duplicate task ID",
+                ));
             }
             if normalize_title(&task.title).is_err() || task.title.trim() != task.title {
                 return Err(TodoError::InvalidStoredState("invalid task title"));
@@ -177,19 +192,55 @@ mod tests {
     #[test]
     fn add_list_complete_reopen_and_remove_share_one_owner() {
         let mut tasks = TodoList::default();
-        let id = match tasks.execute(TodoCommand::Add { title: "  Read book  ".into() }).unwrap() {
+        let id = match tasks
+            .execute(TodoCommand::Add {
+                title: "  Read book  ".into(),
+            })
+            .unwrap()
+        {
             TodoOutcome::Added(id) => id,
             other => panic!("unexpected outcome: {other:?}"),
         };
         assert_eq!(tasks.tasks()[0].title(), "Read book");
-        assert_eq!(tasks.execute(TodoCommand::SetCompleted { id, completed: true }).unwrap(), TodoOutcome::Updated(id));
+        assert_eq!(
+            tasks
+                .execute(TodoCommand::SetCompleted {
+                    id,
+                    completed: true
+                })
+                .unwrap(),
+            TodoOutcome::Updated(id)
+        );
         assert!(tasks.tasks()[0].completed());
-        assert_eq!(tasks.execute(TodoCommand::SetCompleted { id, completed: true }).unwrap(), TodoOutcome::Unchanged(id));
-        assert_eq!(tasks.execute(TodoCommand::SetCompleted { id, completed: false }).unwrap(), TodoOutcome::Updated(id));
+        assert_eq!(
+            tasks
+                .execute(TodoCommand::SetCompleted {
+                    id,
+                    completed: true
+                })
+                .unwrap(),
+            TodoOutcome::Unchanged(id)
+        );
+        assert_eq!(
+            tasks
+                .execute(TodoCommand::SetCompleted {
+                    id,
+                    completed: false
+                })
+                .unwrap(),
+            TodoOutcome::Updated(id)
+        );
         assert!(!tasks.tasks()[0].completed());
-        assert_eq!(tasks.execute(TodoCommand::Remove { id }).unwrap(), TodoOutcome::Removed(id));
+        assert_eq!(
+            tasks.execute(TodoCommand::Remove { id }).unwrap(),
+            TodoOutcome::Removed(id)
+        );
         assert!(tasks.tasks().is_empty());
-        let next = tasks.execute(TodoCommand::Add { title: "Next".into() }).unwrap();
+        let next = tasks
+            .execute(TodoCommand::Add {
+                title: "Next".into(),
+            })
+            .unwrap();
         assert_eq!(next, TodoOutcome::Added(TaskId(2)));
     }
 
@@ -197,10 +248,29 @@ mod tests {
     fn rejected_operations_never_change_state() {
         let mut tasks = TodoList::default();
         let before = tasks.clone();
-        assert_eq!(tasks.execute(TodoCommand::Add { title: " \n ".into() }), Err(TodoError::InvalidTitle));
-        assert_eq!(tasks.execute(TodoCommand::Add { title: "x".repeat(MAX_TITLE_CHARS + 1) }), Err(TodoError::InvalidTitle));
-        assert_eq!(tasks.execute(TodoCommand::SetCompleted { id: TaskId(9), completed: true }), Err(TodoError::UnknownTask(TaskId(9))));
-        assert_eq!(tasks.execute(TodoCommand::Remove { id: TaskId(9) }), Err(TodoError::UnknownTask(TaskId(9))));
+        assert_eq!(
+            tasks.execute(TodoCommand::Add {
+                title: " \n ".into()
+            }),
+            Err(TodoError::InvalidTitle)
+        );
+        assert_eq!(
+            tasks.execute(TodoCommand::Add {
+                title: "x".repeat(MAX_TITLE_CHARS + 1)
+            }),
+            Err(TodoError::InvalidTitle)
+        );
+        assert_eq!(
+            tasks.execute(TodoCommand::SetCompleted {
+                id: TaskId(9),
+                completed: true
+            }),
+            Err(TodoError::UnknownTask(TaskId(9)))
+        );
+        assert_eq!(
+            tasks.execute(TodoCommand::Remove { id: TaskId(9) }),
+            Err(TodoError::UnknownTask(TaskId(9)))
+        );
         assert_eq!(tasks, before);
     }
 

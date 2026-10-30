@@ -34,7 +34,9 @@ impl TodoStorage {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(TodoList::default());
             }
-            Err(error) => return Err(error).with_context(|| format!("open {}", self.path.display())),
+            Err(error) => {
+                return Err(error).with_context(|| format!("open {}", self.path.display()));
+            }
         };
         // Bound allocations even if the file grows while reading.
         let mut data = Vec::new();
@@ -56,7 +58,10 @@ impl TodoStorage {
         if data.len() as u64 > MAX_FILE_BYTES {
             bail!("task data exceeds the {} byte limit", MAX_FILE_BYTES);
         }
-        let parent = self.path.parent().filter(|p| !p.as_os_str().is_empty())
+        let parent = self
+            .path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
             .context("task data path has no parent directory")?;
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
         // One writer per running Todo instance; process-ID suffix avoids reusing another
@@ -65,8 +70,12 @@ impl TodoStorage {
         temp_name.push(format!(".{}.tmp", std::process::id()));
         let temp = PathBuf::from(temp_name);
         let result = (|| -> Result<()> {
-            let mut file = OpenOptions::new().write(true).create(true).truncate(true)
-                .open(&temp).with_context(|| format!("create {}", temp.display()))?;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&temp)
+                .with_context(|| format!("create {}", temp.display()))?;
             file.write_all(&data).context("write task data")?;
             file.sync_all().context("sync task data")?;
             fs::rename(&temp, &self.path)
@@ -122,11 +131,21 @@ mod tests {
         let path = test_path();
         let store = TodoStorage::at(path.clone());
         let mut tasks = store.load().unwrap();
-        let id = match tasks.execute(TodoCommand::Add { title: "Persistent".into() }).unwrap() {
+        let id = match tasks
+            .execute(TodoCommand::Add {
+                title: "Persistent".into(),
+            })
+            .unwrap()
+        {
             TodoOutcome::Added(id) => id,
             other => panic!("unexpected outcome: {other:?}"),
         };
-        tasks.execute(TodoCommand::SetCompleted { id, completed: true }).unwrap();
+        tasks
+            .execute(TodoCommand::SetCompleted {
+                id,
+                completed: true,
+            })
+            .unwrap();
         store.save(&tasks).unwrap();
         let reloaded = store.load().unwrap();
         assert_eq!(reloaded, tasks);

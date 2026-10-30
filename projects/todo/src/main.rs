@@ -1,8 +1,8 @@
 mod application;
 mod model;
+mod rendering;
 mod service;
 mod storage;
-mod rendering;
 mod ui;
 mod window;
 

@@ -4,9 +4,8 @@ use crate::model::{TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
     Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, NoHostProtocol,
-    SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision,
-    TextDocumentSnapshot, TextPosition, TextSelection, UiApp, UpdateOutput, View, button, column,
-    row, text, text_field,
+    SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot,
+    TextPosition, TextSelection, UiApp, UpdateOutput, View, button, column, row, text, text_field,
 };
 
 pub use host::install;
@@ -146,7 +145,11 @@ impl UiApp for TodoUi {
         }
 
         if let Some(error) = &state.error {
-            content.push(text(format!("Error: {error}")).key("todo.error").into_element());
+            content.push(
+                text(format!("Error: {error}"))
+                    .key("todo.error")
+                    .into_element(),
+            );
         }
 
         column(content)
@@ -170,14 +173,13 @@ impl UiApp for TodoUi {
                         state.draft_snapshot(),
                     ));
                 }
-                state.draft.replace_range(replacement, intent.replacement_text());
+                state
+                    .draft
+                    .replace_range(replacement, intent.replacement_text());
                 state.draft_selection = intent.proposed_selection().active();
                 state.draft_revision += 1;
                 state.error = None;
-                UpdateOutput::edit(EditResolution::accepted(
-                    request,
-                    state.draft_snapshot(),
-                ))
+                UpdateOutput::edit(EditResolution::accepted(request, state.draft_snapshot()))
             }
             TodoAction::AddTask => {
                 let created = state.execute(TodoCommand::Add {
@@ -229,7 +231,10 @@ mod tests {
         let id = state.service.tasks()[0].id();
         let _ = TodoUi::update(
             &mut state,
-            TodoAction::SetCompleted { id, completed: true },
+            TodoAction::SetCompleted {
+                id,
+                completed: true,
+            },
         );
         assert!(storage.load().unwrap().tasks()[0].completed());
 

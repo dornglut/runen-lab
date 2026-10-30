@@ -53,7 +53,9 @@ impl TodoService {
     /// State is published only after a successful save. No-op outcomes do not write.
     pub fn execute(&mut self, command: TodoCommand) -> Result<TodoOutcome, TodoApplyError> {
         let mut candidate = self.tasks.clone();
-        let outcome = candidate.execute(command).map_err(TodoApplyError::Command)?;
+        let outcome = candidate
+            .execute(command)
+            .map_err(TodoApplyError::Command)?;
         if !matches!(outcome, TodoOutcome::Unchanged(_)) {
             self.storage
                 .save(&candidate)
@@ -81,7 +83,9 @@ mod tests {
         let storage = TodoStorage::at(path.clone());
         let mut service = TodoService::at(storage.clone()).unwrap();
         let id = match service
-            .execute(TodoCommand::Add { title: "Programmatic".into() })
+            .execute(TodoCommand::Add {
+                title: "Programmatic".into(),
+            })
             .unwrap()
         {
             TodoOutcome::Added(id) => id,
