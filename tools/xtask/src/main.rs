@@ -40,39 +40,6 @@ fn main() -> ExitCode {
 
 fn validate() -> Result<(), String> {
     let root = repository_root()?;
-
-    // TEMPORARY DRAFT CI DIAGNOSTIC ONLY: regenerate the real Todo lockfile
-    // against the accepted Engine pin and print the exact Cargo-resolved diff.
-    // This branch revision is intentionally non-mergeable and will be replaced
-    // by a committed regenerated lockfile plus original strict validation.
-    if env::var_os("GITHUB_ACTIONS").is_some() {
-        let status = Command::new("cargo")
-            .current_dir(&root)
-            .args([
-                "metadata",
-                "--manifest-path",
-                "projects/todo/Cargo.toml",
-                "--format-version=1",
-            ])
-            .stdout(std::process::Stdio::null())
-            .status()
-            .map_err(|e| format!("failed Cargo lock resolution: {e}"))?;
-        if !status.success() {
-            return Err("Cargo lock resolution command failed".into());
-        }
-        let diff = Command::new("git")
-            .current_dir(&root)
-            .args(["diff", "--", "projects/todo/Cargo.lock"])
-            .output()
-            .map_err(|e| format!("failed to read resolved lockfile diff: {e}"))?;
-        if !diff.status.success() {
-            return Err("git diff failed for regenerated lockfile".into());
-        }
-        println!("=== BEGIN CARGO-RESOLVED TODO LOCK DIFF ===");
-        print!("{}", String::from_utf8_lossy(&diff.stdout));
-        println!("=== END CARGO-RESOLVED TODO LOCK DIFF ===");
-        return Err("intentional temporary lock regeneration diagnostic; must be removed".into());
-    }
     let before = git_status(&root)?;
 
     check_required_files(&root)?;
