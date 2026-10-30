@@ -45,7 +45,7 @@ fn validate() -> Result<(), String> {
     // against the accepted Engine pin and print the exact Cargo-resolved diff.
     // This branch revision is intentionally non-mergeable and will be replaced
     // by a committed regenerated lockfile plus original strict validation.
-    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+    if env::var_os("GITHUB_ACTIONS").is_some() {
         let status = Command::new("cargo")
             .current_dir(&root)
             .args([
