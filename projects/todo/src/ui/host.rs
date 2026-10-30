@@ -4,17 +4,14 @@ use engine::plugins::ui::{
     UiRuntimePresentationBinding, UiTypedScreenId,
 };
 use engine::prelude::*;
-use runenui_core::{FontFamilyName, GenericFontFamily, StyleEnvironment};
+use runenui_core::StyleEnvironment;
 
 use super::{TodoUi, TodoUiState};
 
 pub fn install(app: &mut App) -> anyhow::Result<()> {
-    let font_bytes = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?;
-
-    let fonts = UiRuntimeFontConfiguration::new(vec![font_bytes]).with_generic_mapping(
-        GenericFontFamily::SansSerif,
-        vec![FontFamilyName::new("Segoe UI")?],
-    );
+    // Accepted Runenwerk font policy delegates discovery to RunenUI.
+    // No OS font file path or unlicensed binary is embedded in the app.
+    let fonts = UiRuntimeFontConfiguration::default().with_system_fonts();
 
     let state = TodoUiState::load()?;
     let mount = app
