@@ -1,11 +1,15 @@
 mod host;
 
+#[cfg(test)]
+mod layout_tests;
+
 use crate::model::{TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
-    Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, NoHostProtocol,
-    SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot,
-    TextPosition, TextSelection, UiApp, UpdateOutput, View, button, column, row, text, text_field,
+    Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, LayoutDimension,
+    LayoutStyle, LogicalLength, NoHostProtocol, SemanticEditableMode, TextAffinity, TextDocumentId,
+    TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection, UiApp, UpdateOutput,
+    View, button, column, row, text, text_field,
 };
 
 pub use host::install;
@@ -97,6 +101,12 @@ impl UiApp for TodoUi {
                 .expect("Todo draft is always normalized single-line text")
                 .id("todo.new-task")
                 .key("todo.new-task")
+                // Reserve a usable entry width even when the document is empty;
+                // the visual placeholder does not supply its intrinsic width.
+                .with_layout(
+                    LayoutStyle::default()
+                        .with_width(LayoutDimension::length(LogicalLength::from(240_u16))),
+                )
                 .placeholder("New task")
                 .on_submit(|| TodoAction::AddTask)
                 .into_element(),

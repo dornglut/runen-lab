@@ -11,6 +11,9 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 runenui_core = { git = "https://github.com/dornglut/runen-ui", rev = "712d9240052cde9dd2ece2516d28f599d3f2465d", version = "0.1.0" }
 
+[dev-dependencies]
+runenui_runtime = { git = "https://github.com/dornglut/runen-ui", rev = "712d9240052cde9dd2ece2516d28f599d3f2465d", version = "0.1.0" }
+
 [lints.rust]
 unsafe_code = "forbid"
 unused_lifetimes = "deny"
