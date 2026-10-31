@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [dependencies]
-engine = { git = "https://github.com/dornglut/runenwerk", rev = "505581b30537901de9964badbf99cd083237f359", version = "0.1.0" }
+engine = { git = "https://github.com/dornglut/runenwerk", rev = "eed80b1b15e619320c46175be29196c41bfd274c", version = "0.1.0" }
 anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

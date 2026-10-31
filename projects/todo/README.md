@@ -16,7 +16,7 @@ cargo run --locked
 ```
 
 Use the Rust toolchain selected by the repository `rust-toolchain.toml`.
-The application pins accepted Runenwerk `505581b30537901de9964badbf99cd083237f359` and uses its explicit
+The application pins accepted Runenwerk `eed80b1b15e619320c46175be29196c41bfd274c` and uses its explicit
 `UiRuntimeFontConfiguration::with_system_fonts()` policy rather than a Windows-only font-file path.
 This is a temporary accepted-API consumer baseline, **not** the future fluent App-model cutover.
 Native display/input/resize/shutdown still require physical platform qualification; compilation
