@@ -9,7 +9,8 @@ use runenui_core::{
     Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, LayoutDimension,
     LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, SemanticEditableMode, TextAffinity,
     TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection, UiApp,
-    UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column, row, text, text_field,
+    UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column, row, text,
+    text_field,
 };
 
 pub use host::install;
@@ -82,14 +83,10 @@ impl UiApp for TodoUi {
         ProducerBudget::new(nodes + 1, 0).with_reconciliation(nodes, 0, nodes)
     }
 
-    fn action_producer_budget(
-        _state: &Self::State,
-        _action: &Self::Action,
-    ) -> ProducerBudget {
+    fn action_producer_budget(_state: &Self::State, _action: &Self::Action) -> ProducerBudget {
         // Queued actions may change the task count before this action executes.
         // The model's MAX_TASKS is the closed bound for every reachable tree.
-        ProducerBudget::new(28, 1)
-            .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+        ProducerBudget::new(28, 1).with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
     }
 
     fn interaction_producer_budget(_state: &Self::State) -> ProducerBudget {
