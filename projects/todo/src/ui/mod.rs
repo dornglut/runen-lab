@@ -3,18 +3,24 @@ mod host;
 #[cfg(test)]
 mod layout_tests;
 
-use crate::model::{TaskId, TodoCommand};
+use crate::model::{MAX_TASKS, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
     Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, LayoutDimension,
-    LayoutStyle, LogicalLength, NoHostProtocol, SemanticEditableMode, TextAffinity, TextDocumentId,
-    TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection, UiApp, UpdateOutput,
-    View, button, column, row, text, text_field,
+    LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, SemanticEditableMode, TextAffinity,
+    TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection, UiApp,
+    UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column, row, text, text_field,
 };
 
 pub use host::install;
 
 const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
+
+// Root, title, input row, editable, Add, and optional empty/error text;
+// each task adds one row with Complete/Reopen, title and Remove.
+const BASE_UI_NODES: usize = 6;
+const TASK_UI_NODES: usize = 4;
+const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * MAX_TASKS;
 
 pub struct TodoUi;
 
@@ -70,6 +76,31 @@ pub enum TodoAction {
 }
 
 impl UiApp for TodoUi {
+    fn initial_producer_budget(state: &Self::State) -> ProducerBudget {
+        // Initial mounting is state-dependent; bound the actual persisted task tree.
+        let nodes = BASE_UI_NODES + TASK_UI_NODES * state.service.tasks().len();
+        ProducerBudget::new(nodes + 1, 0).with_reconciliation(nodes, 0, nodes)
+    }
+
+    fn action_producer_budget(
+        _state: &Self::State,
+        _action: &Self::Action,
+    ) -> ProducerBudget {
+        // Queued actions may change the task count before this action executes.
+        // The model's MAX_TASKS is the closed bound for every reachable tree.
+        ProducerBudget::new(28, 1)
+            .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+    }
+
+    fn interaction_producer_budget(_state: &Self::State) -> ProducerBudget {
+        // Retain the accepted U9-C text-field/IME service frontier, while
+        // reconciling the Todo-owned maximum number of authored nodes.
+        ProducerBudget::new(28, 13)
+            .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+            .with_work_starts(WorkStartBudget::new(0, 0, 0, 0, 2))
+            .with_work_residency(WorkResidencyBudget::new(0, 0, 0, 0, 0, 2))
+    }
+
     type State = TodoUiState;
     type Action = TodoAction;
     type HostProtocol = NoHostProtocol;

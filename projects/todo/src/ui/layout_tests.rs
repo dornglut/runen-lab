@@ -15,7 +15,8 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
         "layout fixture must start without task data"
     );
     let state = TodoUiState::new(TodoService::at(TodoStorage::at(path)).unwrap());
-    let mut runtime = AppRuntime::<TodoUi>::mount(state);
+    let mut runtime = AppRuntime::<TodoUi>::mount(state)
+        .expect("initial Todo tree fits the declared producer budget");
     assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
     runtime
         .set_text_generic_family_mapping(
