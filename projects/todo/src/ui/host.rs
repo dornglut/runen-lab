@@ -9,13 +9,11 @@ pub fn install(app: &mut App) -> anyhow::Result<()> {
     let fonts = UiRuntimeFontConfiguration::default().with_system_fonts();
 
     let state = TodoUiState::load()?;
-    let slot = app
-        .ui()
-        .mount_app_on_primary::<TodoUi>(
-            UiTypedScreenId::new("todo.main"),
-            state,
-            &fonts,
-        )?;
+    let slot = app.ui().mount_app_on_primary::<TodoUi>(
+        UiTypedScreenId::new("todo.main"),
+        state,
+        &fonts,
+    )?;
 
     // Native input selection is independent of UI mounting and presentation.
     app.ui().bind_native_primary_input(slot)?;
