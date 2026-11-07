@@ -1,10 +1,5 @@
-use engine::plugins::render::{RenderFrameProducerId, host::RenderSurfaceId};
-use engine::plugins::ui::{
-    UiRuntimeFontConfiguration, UiRuntimePresentationAssociationsResource,
-    UiRuntimePresentationBinding, UiTypedScreenId,
-};
+use engine::plugins::ui::{UiRuntimeFontConfiguration, UiTypedScreenId};
 use engine::prelude::*;
-use runenui_core::StyleEnvironment;
 
 use super::{TodoUi, TodoUiState};
 
@@ -14,24 +9,16 @@ pub fn install(app: &mut App) -> anyhow::Result<()> {
     let fonts = UiRuntimeFontConfiguration::default().with_system_fonts();
 
     let state = TodoUiState::load()?;
-    let mount = app
+    let slot = app
         .ui()
-        .mount_app::<TodoUi>(UiTypedScreenId::new("todo.main"), state, &fonts);
+        .mount_app_on_primary::<TodoUi>(
+            UiTypedScreenId::new("todo.main"),
+            state,
+            &fonts,
+        )?;
 
-    let slot = mount
-        .slot_id()
-        .ok_or_else(|| anyhow::anyhow!("Todo UI mount failed: {mount:?}"))?;
-
-    let binding = UiRuntimePresentationBinding::new(
-        slot,
-        RenderFrameProducerId::try_from_raw(1).expect("producer ID must be nonzero"),
-        RenderSurfaceId::primary(),
-        StyleEnvironment::default(),
-    );
-
-    app.world_mut()
-        .resource_mut::<UiRuntimePresentationAssociationsResource>()?
-        .bind(binding)?;
+    // Native input selection is independent of UI mounting and presentation.
+    app.ui().bind_native_primary_input(slot)?;
 
     Ok(())
 }

@@ -258,7 +258,7 @@ dependencies = [
 [[package]]
 name = "asset"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "diagnostics",
  "id",
@@ -662,7 +662,7 @@ dependencies = [
 [[package]]
 name = "diagnostics"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 
 [[package]]
 name = "dispatch"
@@ -742,7 +742,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 [[package]]
 name = "engine"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "anyhow",
  "asset",
@@ -805,7 +805,7 @@ dependencies = [
 [[package]]
 name = "engine_render_macros"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -816,7 +816,7 @@ dependencies = [
 [[package]]
 name = "engine_replay"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "anyhow",
  "engine_sim",
@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "engine_sim"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1081,7 +1081,7 @@ dependencies = [
 [[package]]
 name = "graph"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "resource_ref",
 ]
@@ -1291,7 +1291,7 @@ checksum = "913a7d294ad056474749152107309fdee3ec17d2482d1ab70fdc61a81c64b9a3"
 [[package]]
 name = "id"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
 ]
@@ -1299,7 +1299,7 @@ dependencies = [
 [[package]]
 name = "id_macros"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1691,7 +1691,7 @@ dependencies = [
 [[package]]
 name = "material_graph"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "graph",
  "product",
@@ -2423,7 +2423,7 @@ dependencies = [
 [[package]]
 name = "product"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ratification",
  "serde",
@@ -2480,7 +2480,7 @@ checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 [[package]]
 name = "ratification"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 
 [[package]]
 name = "raw-window-handle"
@@ -2564,7 +2564,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "resource_ref"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
 ]
@@ -2671,12 +2671,12 @@ dependencies = [
 [[package]]
 name = "runenui_core"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runen-ui?rev=712d9240052cde9dd2ece2516d28f599d3f2465d#712d9240052cde9dd2ece2516d28f599d3f2465d"
+source = "git+https://github.com/dornglut/runen-ui?rev=861be3bedadd56e1db30f7e13bfdaafe2f2c95fd#861be3bedadd56e1db30f7e13bfdaafe2f2c95fd"
 
 [[package]]
 name = "runenui_runtime"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runen-ui?rev=712d9240052cde9dd2ece2516d28f599d3f2465d#712d9240052cde9dd2ece2516d28f599d3f2465d"
+source = "git+https://github.com/dornglut/runen-ui?rev=861be3bedadd56e1db30f7e13bfdaafe2f2c95fd#861be3bedadd56e1db30f7e13bfdaafe2f2c95fd"
 dependencies = [
  "runenui_core",
  "runenui_text",
@@ -2687,7 +2687,7 @@ dependencies = [
 [[package]]
 name = "runenui_text"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runen-ui?rev=712d9240052cde9dd2ece2516d28f599d3f2465d#712d9240052cde9dd2ece2516d28f599d3f2465d"
+source = "git+https://github.com/dornglut/runen-ui?rev=861be3bedadd56e1db30f7e13bfdaafe2f2c95fd#861be3bedadd56e1db30f7e13bfdaafe2f2c95fd"
 dependencies = [
  "fontique",
  "parley",
@@ -2699,7 +2699,7 @@ dependencies = [
 [[package]]
 name = "runenui_winit"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runen-ui?rev=712d9240052cde9dd2ece2516d28f599d3f2465d#712d9240052cde9dd2ece2516d28f599d3f2465d"
+source = "git+https://github.com/dornglut/runen-ui?rev=861be3bedadd56e1db30f7e13bfdaafe2f2c95fd#861be3bedadd56e1db30f7e13bfdaafe2f2c95fd"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3057,7 +3057,7 @@ dependencies = [
 [[package]]
 name = "texture"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "product",
  "ratification",
@@ -3340,7 +3340,7 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 [[package]]
 name = "ui_artifacts"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_controls",
@@ -3351,7 +3351,7 @@ dependencies = [
 [[package]]
 name = "ui_binding"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_artifacts",
@@ -3362,7 +3362,7 @@ dependencies = [
 [[package]]
 name = "ui_controls"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_layout",
@@ -3374,7 +3374,7 @@ dependencies = [
 [[package]]
 name = "ui_definition"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ron",
  "serde",
@@ -3391,7 +3391,7 @@ dependencies = [
 [[package]]
 name = "ui_evaluator"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_artifacts",
@@ -3404,7 +3404,7 @@ dependencies = [
 [[package]]
 name = "ui_graph_editor"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
 ]
@@ -3412,7 +3412,7 @@ dependencies = [
 [[package]]
 name = "ui_hosts"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_evaluator",
@@ -3423,7 +3423,7 @@ dependencies = [
 [[package]]
 name = "ui_input"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_math",
 ]
@@ -3431,7 +3431,7 @@ dependencies = [
 [[package]]
 name = "ui_layout"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_math",
@@ -3440,12 +3440,12 @@ dependencies = [
 [[package]]
 name = "ui_math"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 
 [[package]]
 name = "ui_program"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_schema",
@@ -3454,7 +3454,7 @@ dependencies = [
 [[package]]
 name = "ui_program_lowering"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_controls",
  "ui_definition",
@@ -3465,7 +3465,7 @@ dependencies = [
 [[package]]
 name = "ui_render_data"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_math",
@@ -3475,7 +3475,7 @@ dependencies = [
 [[package]]
 name = "ui_runtime"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_controls",
  "ui_graph_editor",
@@ -3491,7 +3491,7 @@ dependencies = [
 [[package]]
 name = "ui_runtime_view"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_artifacts",
@@ -3502,7 +3502,7 @@ dependencies = [
 [[package]]
 name = "ui_schema"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
 ]
@@ -3510,7 +3510,7 @@ dependencies = [
 [[package]]
 name = "ui_state"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_program",
@@ -3520,7 +3520,7 @@ dependencies = [
 [[package]]
 name = "ui_surface"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "diagnostics",
  "ratification",
@@ -3529,7 +3529,7 @@ dependencies = [
 [[package]]
 name = "ui_text"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_math",
 ]
@@ -3537,7 +3537,7 @@ dependencies = [
 [[package]]
 name = "ui_theme"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "serde",
  "ui_text",
@@ -3546,7 +3546,7 @@ dependencies = [
 [[package]]
 name = "ui_tree"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_graph_editor",
  "ui_layout",
@@ -3559,7 +3559,7 @@ dependencies = [
 [[package]]
 name = "ui_widgets"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "ui_layout",
  "ui_math",
@@ -4347,7 +4347,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 [[package]]
 name = "world_ops"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "runen-spatial",
  "serde",
@@ -4356,7 +4356,7 @@ dependencies = [
 [[package]]
 name = "world_sdf"
 version = "0.1.0"
-source = "git+https://github.com/dornglut/runenwerk?rev=eed80b1b15e619320c46175be29196c41bfd274c#eed80b1b15e619320c46175be29196c41bfd274c"
+source = "git+https://github.com/dornglut/runenwerk?rev=b4683b99939464c3bc79e85f04c752687f01bc86#b4683b99939464c3bc79e85f04c752687f01bc86"
 dependencies = [
  "postcard",
  "product",
