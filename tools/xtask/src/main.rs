@@ -16,6 +16,9 @@ const REQUIRED_FILES: &[&str] = &[
     ".github/workflows/validate.yml",
     "tools/xtask/Cargo.toml",
     "tools/xtask/src/main.rs",
+    "projects/todo/Cargo.toml",
+    "projects/todo/Cargo.lock",
+    "projects/todo/src/main.rs",
 ];
 
 fn main() -> ExitCode {
@@ -66,6 +69,46 @@ fn validate() -> Result<(), String> {
             "warnings",
         ],
     )?;
+    // The independent Todo project is not in the root Cargo workspace.
+    // Validate its exact committed lockfile and all application targets explicitly.
+    const TODO: &str = "projects/todo/Cargo.toml";
+    run(
+        &root,
+        "cargo",
+        &[
+            "metadata",
+            "--manifest-path",
+            TODO,
+            "--locked",
+            "--format-version=1",
+            "--no-deps",
+        ],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &["fmt", "--manifest-path", TODO, "--", "--check"],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &["test", "--manifest-path", TODO, "--all-targets", "--locked"],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "clippy",
+            "--manifest-path",
+            TODO,
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+
     run(&root, "git", &["diff", "--check"])?;
 
     let after = git_status(&root)?;
