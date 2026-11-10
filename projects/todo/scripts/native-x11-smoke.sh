@@ -185,23 +185,33 @@ if ! close_todo after-edit; then
   close_failures=$((close_failures + 1))
 fi
 
-# Restart the same persisted file in a new process. Test the same WM
-# close gesture at idle after initial rendering, independently of editing.
+# First restart: isolate the first actual pointer event on a restored UI
+# before touching its task row. This distinguishes an initial M13 recipient
+# failure from a Complete-action failure; it does not bypass native ingress.
 start_todo
 assert_alive "restart"
 state_matches "open" || fail "restart-lost-task"
 echo "todo_native_x11=pass phase=restart-read-persisted"
-if ! close_todo after-restart; then
+xdotool mousemove --window "$window" 40 32 click 1
+sleep 0.5
+assert_alive "restored-field-click"
+echo "todo_native_x11=pass phase=restored-field-click"
+xdotool mousemove --window "$window" 38 54 click 1
+await_state "complete" "complete-button"
+echo "todo_native_x11=pass phase=restored-task-completed"
+if ! close_todo after-complete; then
   close_failures=$((close_failures + 1))
 fi
 
-# A third fresh window tests the original Complete click and writeback.
-# Terminating this test-owned process is NOT presented as graceful close.
+# Second restart: verify the completed state survives another native process.
+# An idle WM close is independently tested after reloading the completed data.
 start_todo
-xdotool mousemove --window "$window" 38 54 click 1
-await_state "complete" "complete-button"
-echo "todo_native_x11=pass phase=restart-and-complete"
-stop_test_process
+assert_alive "completed-restart"
+state_matches "complete" || fail "completed-restart-lost-task"
+echo "todo_native_x11=pass phase=completed-state-reloaded"
+if ! close_todo after-restart; then
+  close_failures=$((close_failures + 1))
+fi
 if [[ "$close_failures" -ne 0 ]]; then
   echo "todo_native_x11=fail close_methods=$close_failures physical_x11=true mode=release" >&2
   exit 1
