@@ -580,3 +580,162 @@ fn persisted_task_initial_mount_and_original_pointer_remain_running() {
     assert_eq!(storage.load().unwrap().tasks().len(), 1);
     std::fs::remove_file(path).unwrap();
 }
+
+struct TodoInitialBudgetProbe<const PROFILE: usize>;
+
+impl<const PROFILE: usize> UiApp for TodoInitialBudgetProbe<PROFILE> {
+    type State = TodoUiState;
+    type Action = TodoAction;
+    type HostProtocol = NoHostProtocol;
+
+    fn root(state: &Self::State) -> impl View<Self::Action> {
+        TodoUi::root(state)
+    }
+
+    fn update(
+        state: &mut Self::State,
+        action: Self::Action,
+    ) -> impl IntoUpdateOutput<Self::Action, Self::HostProtocol> {
+        TodoUi::update(state, action)
+    }
+
+    fn initial_producer_budget(state: &Self::State) -> ProducerBudget {
+        let nodes = BASE_UI_NODES + TASK_UI_NODES * state.service.tasks().len();
+        match PROFILE {
+            0 => TodoUi::initial_producer_budget(state),
+            // One bounded extra turn of retained reconciliation work, with
+            // unchanged application outputs and interaction profile.
+            1 => ProducerBudget::new(nodes + 2, 0).with_reconciliation(
+                nodes,
+                1,
+                nodes,
+            ),
+            // Broader bounded initial reconciliation/output control.
+            // Queue credits cover mounted identities plus retained updates,
+            // rather than creating an impossible producer profile.
+            2 => ProducerBudget::new((nodes + 2) * 2 + 5, 5).with_reconciliation(
+                nodes + 2,
+                nodes + 2,
+                nodes + 2,
+            ),
+            _ => unreachable!("test-only budget variant"),
+        }
+    }
+
+    fn action_producer_budget(state: &Self::State, action: &Self::Action) -> ProducerBudget {
+        TodoUi::action_producer_budget(state, action)
+    }
+
+    fn interaction_producer_budget(state: &Self::State) -> ProducerBudget {
+        TodoUi::interaction_producer_budget(state)
+    }
+}
+
+#[test]
+fn diagnose_restored_pointer_down_against_initial_reconciliation_budget_only() {
+    use runenui_core::{
+        InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
+        PointerEvent, PointerId, PointerPhase,
+    };
+    use runenui_runtime::{PumpBudget, RuntimeStatus};
+
+    fn status_for<const PROFILE: usize>(storage: TodoStorage) -> RuntimeStatus {
+        let restored = TodoUiState::new(TodoService::at(storage).unwrap());
+        assert_eq!(restored.service.tasks().len(), 1);
+        let mut runtime = AppRuntime::<TodoInitialBudgetProbe<PROFILE>>::mount(restored)
+            .expect("the bounded initial budget comparator mounts");
+        assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+        runtime
+            .set_text_generic_family_mapping(
+                GenericFontFamily::SansSerif,
+                &[FontFamilyName::new("Cantarell").unwrap()],
+            )
+            .unwrap();
+        let style = runenui_core::StyleEnvironment::default();
+        let publication = runtime
+            .publish_surface(&SurfaceBuildContext::tight(
+                &style,
+                LogicalSize::try_new(800.0, 600.0).unwrap(),
+            ))
+            .unwrap();
+        let bounds = publication
+            .frame()
+            .nodes()
+            .iter()
+            .find(|node| {
+                node.authored_id()
+                    .is_some_and(|id| id.as_str() == "todo.new-task")
+            })
+            .expect("same restored field")
+            .bounds();
+        let point = LogicalPoint::new(
+            bounds.x() + bounds.width() / 2.0,
+            bounds.y() + bounds.height() / 2.0,
+        )
+        .unwrap();
+        let device = InputDeviceId::new(11).unwrap();
+        let pointer = PointerId::new(1).unwrap();
+
+        for phase in [PointerPhase::Move, PointerPhase::Down] {
+            let mut event = PointerEvent::new(
+                pointer,
+                PointerDeviceKind::Mouse,
+                phase,
+                point,
+                publication.input_context().clone(),
+            )
+            .with_device_id(device);
+            if phase == PointerPhase::Down {
+                event = event
+                    .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                    .with_changed_button(PointerButton::Primary);
+            }
+            runtime
+                .submit_pointer(event)
+                .expect("the original pointer enters the same RunenUI FIFO");
+            let batch = runtime
+                .pump(PumpBudget::new(128, 128, 128, 128))
+                .expect("canonical bounded pump returns terminal status");
+            if phase == PointerPhase::Down {
+                println!(
+                    "restored_initial_profile={PROFILE} outcome={:?} status={:?} pause={:?} processed={:?}",
+                    batch.report().outcome(),
+                    batch.final_ownership().status(),
+                    batch.pause_reason(),
+                    batch.processed_through()
+                );
+                return batch.final_ownership().status();
+            }
+            assert_eq!(
+                batch.final_ownership().status(),
+                RuntimeStatus::Running,
+                "restored pointer Move is the controlled nonterminal baseline"
+            );
+        }
+        unreachable!("both pointer phases observed")
+    }
+
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-budget-comparison-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "budget experiment must start without data");
+    let storage = TodoStorage::at(path.clone());
+    TodoService::at(storage.clone())
+        .unwrap()
+        .execute(TodoCommand::Add {
+            title: "Persisted budget comparison".into(),
+        })
+        .unwrap();
+
+    let baseline = status_for::<0>(storage.clone());
+    let reconciled = status_for::<1>(storage.clone());
+    let output_raised = status_for::<2>(storage.clone());
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        matches!(baseline, RuntimeStatus::Running)
+            || matches!(reconciled, RuntimeStatus::Running)
+            || matches!(output_raised, RuntimeStatus::Running),
+        "all bounded initial-declaration variants fail: baseline={baseline:?}, reconciled={reconciled:?}, output_raised={output_raised:?}"
+    );
+}
