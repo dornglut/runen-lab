@@ -455,3 +455,128 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
     assert!(!saved.tasks()[0].completed());
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn persisted_task_initial_mount_and_original_pointer_remain_running() {
+    use runenui_core::{
+        InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
+        PointerEvent, PointerId, PointerPhase,
+    };
+    use runenui_runtime::{
+        InputArbitrationRecord, PumpBudget, PumpOutcome, RuntimeStatus, UiInputFinality,
+    };
+
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-restored-m13-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "restored fixture must start empty");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage.clone()).unwrap();
+    service
+        .execute(TodoCommand::Add {
+            title: "Persisted native task".into(),
+        })
+        .expect("persist a real task before recreating TodoUi");
+    drop(service);
+
+    let restored = TodoUiState::new(TodoService::at(storage.clone()).unwrap());
+    assert_eq!(restored.service.tasks().len(), 1);
+    let mut runtime = AppRuntime::<TodoUi>::mount(restored)
+        .expect("persisted one-task Todo must fit initial producer budget");
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .expect("restored nonempty Todo must publish without leaving Running");
+    assert_eq!(
+        runtime.input_ownership().unwrap().status(),
+        RuntimeStatus::Running,
+        "restored one-task Todo is not running after initial Present preparation"
+    );
+    let field = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.new-task")
+        })
+        .expect("restored Todo text input exists")
+        .bounds();
+    let point = LogicalPoint::new(
+        field.x() + field.width() / 2.0,
+        field.y() + field.height() / 2.0,
+    )
+    .unwrap();
+    let device = InputDeviceId::new(11).unwrap();
+    let pointer = PointerId::new(1).unwrap();
+    for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+        let mut event = PointerEvent::new(
+            pointer,
+            PointerDeviceKind::Mouse,
+            phase,
+            point,
+            publication.input_context().clone(),
+        )
+        .with_device_id(device);
+        if phase == PointerPhase::Down {
+            event = event
+                .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                .with_changed_button(PointerButton::Primary);
+        } else if phase == PointerPhase::Up {
+            event = event.with_changed_button(PointerButton::Primary);
+        }
+        let submitted = runtime
+            .submit_pointer(event)
+            .unwrap_or_else(|error| panic!("restored Todo {phase:?} admission: {error:?}"));
+        let batch = runtime
+            .pump(PumpBudget::new(128, 128, 128, 128))
+            .expect("restored Todo canonical M13 pointer pump");
+        assert!(
+            batch.pause_reason().is_none()
+                && batch.final_ownership().status() == RuntimeStatus::Running
+                && matches!(
+                    batch.report().outcome(),
+                    PumpOutcome::Quiescent | PumpOutcome::BudgetExhausted
+                ),
+            "restored Todo {phase:?} failed Running M13 finality: {:?}",
+            batch.report()
+        );
+        assert!(
+            batch
+                .processed_through()
+                .is_some_and(|through| through >= submitted.sequence()),
+            "original restored Todo {phase:?} sequence was not reached"
+        );
+        let finals = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(receipt)
+                    if receipt.sequence() == submitted.sequence() =>
+                {
+                    Some(receipt.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(finals.len(), 1, "restored Todo {phase:?} terminal receipt");
+        assert!(
+            matches!(finals[0], UiInputFinality::Committed(_)),
+            "restored Todo {phase:?} did not commit: {:?}",
+            finals[0]
+        );
+    }
+    assert_eq!(storage.load().unwrap().tasks().len(), 1);
+    std::fs::remove_file(path).unwrap();
+}
