@@ -126,21 +126,14 @@ stop_test_process() {
 
 close_todo() {
   local method="$1"
-  if [[ "$method" == "windowclose" ]]; then
-    if ! xdotool windowclose "$window"; then
-      echo "todo_native_x11=fail stage=windowclose-request" >&2
-      stop_test_process
-      return 1
-    fi
-  elif [[ "$method" == "alt-f4" ]]; then
-    if ! xdotool windowfocus --sync "$window" ||
-       ! xdotool key --clearmodifiers Alt+F4; then
-      echo "todo_native_x11=fail stage=alt-f4-request" >&2
-      stop_test_process
-      return 1
-    fi
-  else
-    fail "invalid-close-test-method"
+  # Ubuntu 24.04's xdotool windowclose destroys an X11 window; it is NOT
+  # a genuine WM_DELETE_WINDOW/CloseRequested qualification. Openbox's
+  # Alt+F4 sends a window-manager close intent through the X11 OS path.
+  if ! xdotool windowfocus --sync "$window" ||
+     ! xdotool key --clearmodifiers Alt+F4; then
+    echo "todo_native_x11=fail stage=$method-wm-close-request" >&2
+    stop_test_process
+    return 1
   fi
   for _ in $(seq 1 80); do
     if ! kill -0 "$todo_pid" 2>/dev/null; then
@@ -188,17 +181,17 @@ xdotool mousemove --window "$window" 255 32 click 1
 await_state "open" "add-button"
 echo "todo_native_x11=pass phase=create-input-and-persist"
 close_failures=0
-if ! close_todo windowclose; then
+if ! close_todo after-edit; then
   close_failures=$((close_failures + 1))
 fi
 
-# Restart same saved file; Alt+F4 is an independent X11 WM close gesture,
-# not a retry of the first close event on a pending/possibly retired window.
+# Restart the same persisted file in a new process. Test the same WM
+# close gesture at idle after initial rendering, independently of editing.
 start_todo
 assert_alive "restart"
 state_matches "open" || fail "restart-lost-task"
 echo "todo_native_x11=pass phase=restart-read-persisted"
-if ! close_todo alt-f4; then
+if ! close_todo after-restart; then
   close_failures=$((close_failures + 1))
 fi
 
