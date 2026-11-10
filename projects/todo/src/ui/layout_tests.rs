@@ -243,3 +243,219 @@ fn actual_todo_add_button_preserves_m13_pointer_settlement() {
         );
     }
 }
+
+#[test]
+fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
+    use runenui_core::{
+        CommittedTextEvent, InputDeviceId, KeyLocation, KeyModifiers,
+        KeyboardCompositionState, KeyboardEvent, KeyboardPhase, LogicalKey, LogicalPoint,
+        PhysicalKey, PointerButton, PointerButtons, PointerDeviceKind, PointerEvent, PointerId,
+        PointerPhase, SurfaceInputContext,
+    };
+    use runenui_runtime::{
+        InputArbitrationRecord, InputPumpBatch, PumpBudget, PumpOutcome, RuntimeStatus,
+        UiInputFinality,
+    };
+
+    fn click(
+        runtime: &mut AppRuntime<TodoUi>,
+        context: &SurfaceInputContext,
+        point: LogicalPoint,
+        device: InputDeviceId,
+    ) {
+        let pointer = PointerId::new(1).expect("same original pointer stream");
+        for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+            let mut event = PointerEvent::new(
+                pointer,
+                PointerDeviceKind::Mouse,
+                phase,
+                point,
+                context.clone(),
+            )
+            .with_device_id(device);
+            if phase == PointerPhase::Down {
+                event = event
+                    .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                    .with_changed_button(PointerButton::Primary);
+            } else if phase == PointerPhase::Up {
+                event = event.with_changed_button(PointerButton::Primary);
+            }
+            let submitted = runtime
+                .submit_pointer(event)
+                .unwrap_or_else(|error| panic!("Todo {phase:?} input rejected: {error:?}"));
+            let batch = runtime
+                .pump(PumpBudget::new(128, 128, 128, 128))
+                .expect("canonical M13 mouse pump");
+            assert!(
+                batch.pause_reason().is_none()
+                    && batch.final_ownership().status() == RuntimeStatus::Running
+                    && matches!(
+                        batch.report().outcome(),
+                        PumpOutcome::Quiescent | PumpOutcome::BudgetExhausted
+                    ),
+                "Todo {phase:?} unsettled after original input: outcome={:?}, pause={:?}, status={:?}",
+                batch.report().outcome(),
+                batch.pause_reason(),
+                batch.final_ownership().status(),
+            );
+            assert!(
+                batch
+                    .processed_through()
+                    .is_some_and(|through| through >= submitted.sequence()),
+                "Todo {phase:?} original pointer was not processed"
+            );
+            let exact = batch
+                .ordered_records()
+                .iter()
+                .filter_map(|record| match record {
+                    InputArbitrationRecord::InputSettled(settled)
+                        if settled.sequence() == submitted.sequence() =>
+                    {
+                        Some(settled.finality())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(exact.len(), 1, "Todo {phase:?} needs one M13 receipt");
+            assert!(
+                matches!(exact[0], UiInputFinality::Committed(_)),
+                "Todo {phase:?} finality: {:?}",
+                exact[0]
+            );
+        }
+    }
+
+    fn prove_text(
+        batch: &InputPumpBatch,
+        sequence: runenui_core::WorkSequence,
+    ) {
+        assert!(batch.pause_reason().is_none(), "text M13 cannot pause");
+        assert_eq!(batch.final_ownership().status(), RuntimeStatus::Running);
+        assert!(
+            batch
+                .processed_through()
+                .is_some_and(|through| through >= sequence),
+            "paired keyboard/text input must reach its original sequence"
+        );
+        let exact = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(settled)
+                    if settled.sequence() == sequence =>
+                {
+                    Some(settled.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(exact.len(), 1, "keyboard/text needs one M13 receipt");
+        assert!(
+            matches!(exact[0], UiInputFinality::Committed(_)),
+            "keyboard/text finality: {:?}",
+            exact[0]
+        );
+    }
+
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-edit-click-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "edit fixture must not reuse persisted data");
+    let storage = TodoStorage::at(path.clone());
+    let state = TodoUiState::new(TodoService::at(storage.clone()).unwrap());
+    let mut runtime = AppRuntime::<TodoUi>::mount(state).expect("real Todo initial mount");
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let build = SurfaceBuildContext::tight(
+        &style,
+        LogicalSize::try_new(800.0, 600.0).unwrap(),
+    );
+    let displayed = runtime.publish_surface(&build).unwrap();
+    let field = displayed
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.new-task")
+        })
+        .expect("real published editable target")
+        .bounds();
+    let device = InputDeviceId::new(11).expect("real source device");
+    let field_point = LogicalPoint::new(
+        field.x() + field.width() / 2.0,
+        field.y() + field.height() / 2.0,
+    )
+    .unwrap();
+    click(&mut runtime, displayed.input_context(), field_point, device);
+    assert!(
+        runtime
+            .input_ownership()
+            .unwrap()
+            .keyboard()
+            .focused_node()
+            .is_some(),
+        "clicking the actual text field must establish M13 keyboard focus"
+    );
+
+    let keyboard = KeyboardEvent::new(
+        KeyboardPhase::Down,
+        PhysicalKey::Code(String::from("KeyX")),
+        LogicalKey::Character(String::from("x")),
+        KeyModifiers::NONE,
+        false,
+        KeyLocation::Standard,
+        KeyboardCompositionState::Inactive,
+        Some(device),
+    );
+    let text = CommittedTextEvent::new("x", Some(device)).unwrap();
+    let (keyboard_receipt, text_receipt) = runtime
+        .submit_keyboard_with_text(keyboard, text)
+        .expect("same-callback keyboard and committed text must be accepted");
+    let batch = runtime
+        .pump(PumpBudget::new(128, 128, 128, 128))
+        .expect("canonical bounded paired keyboard/text pump");
+    prove_text(&batch, keyboard_receipt.sequence());
+    prove_text(&batch, text_receipt.sequence());
+
+    let edited = runtime.publish_surface(&build).unwrap();
+    let semantic_field = edited
+        .semantic_publication()
+        .snapshot()
+        .nodes()
+        .iter()
+        .find(|node| node.placeholder() == Some("New task"))
+        .expect("semantic editable survives committed text");
+    assert_eq!(
+        semantic_field.editable().and_then(|editable| editable.value()),
+        Some("x"),
+        "paired committed text updates Todo exactly once"
+    );
+
+    let add = edited
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| node.authored_id().is_some_and(|id| id.as_str() == "todo.add"))
+        .expect("real Add button after edited text")
+        .bounds();
+    let add_point = LogicalPoint::new(
+        add.x() + add.width() / 2.0,
+        add.y() + add.height() / 2.0,
+    )
+    .unwrap();
+    click(&mut runtime, edited.input_context(), add_point, device);
+
+    let saved = storage.load().expect("Todo persisted after original typed input");
+    assert_eq!(saved.tasks().len(), 1, "exactly one task was added");
+    assert_eq!(saved.tasks()[0].title(), "x");
+    assert!(!saved.tasks()[0].completed());
+    std::fs::remove_file(path).unwrap();
+}
