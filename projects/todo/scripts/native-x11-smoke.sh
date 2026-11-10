@@ -114,23 +114,61 @@ await_state() {
   fail "$2-no-persisted-state"
 }
 
+# Preserve each failed close as a failure; a test-owned forced stop is
+# only used to isolate the next original native gesture and restart trial.
+stop_test_process() {
+  if [[ -n "$todo_pid" ]] && kill -0 "$todo_pid" 2>/dev/null; then
+    kill "$todo_pid" 2>/dev/null || true
+    wait "$todo_pid" 2>/dev/null || true
+  fi
+  todo_pid=""
+}
+
 close_todo() {
-  xdotool windowclose "$window" || fail "wm-close-request-$run"
+  local method="$1"
+  if [[ "$method" == "windowclose" ]]; then
+    if ! xdotool windowclose "$window"; then
+      echo "todo_native_x11=fail stage=windowclose-request" >&2
+      stop_test_process
+      return 1
+    fi
+  elif [[ "$method" == "alt-f4" ]]; then
+    if ! xdotool windowfocus --sync "$window" ||
+       ! xdotool key --clearmodifiers Alt+F4; then
+      echo "todo_native_x11=fail stage=alt-f4-request" >&2
+      stop_test_process
+      return 1
+    fi
+  else
+    fail "invalid-close-test-method"
+  fi
   for _ in $(seq 1 80); do
     if ! kill -0 "$todo_pid" 2>/dev/null; then
       local status=0
       wait "$todo_pid" || status=$?
       todo_pid=""
       if [[ "$status" -ne 0 ]]; then
-        fail "native-close-exit-$status"
+        echo "todo_native_x11=fail stage=$method-close-exit status=$status" >&2
+        return 1
       fi
+      echo "todo_native_x11=pass phase=$method-close exit=0"
       return 0
     fi
     sleep 0.2
   done
-  fail "native-close-timeout-$run"
+  local exists=false
+  local visible=false
+  if xdotool getwindowname "$window" >/dev/null 2>&1; then
+    exists=true
+  fi
+  if xdotool search --onlyvisible --name '^Runen Lab - Todo$' 2>/dev/null |
+       grep -qx "$window"; then
+    visible=true
+  fi
+  echo "todo_native_x11=fail stage=$method-close-timeout window_exists=$exists window_visible=$visible" >&2
+  stop_test_process
+  return 1
 }
-
 openbox --sm-disable >"$scratch/openbox.log" 2>&1 &
 wm_pid=$!
 sleep 1
@@ -149,15 +187,30 @@ assert_alive "text-input"
 xdotool mousemove --window "$window" 255 32 click 1
 await_state "open" "add-button"
 echo "todo_native_x11=pass phase=create-input-and-persist"
-close_todo
+close_failures=0
+if ! close_todo windowclose; then
+  close_failures=$((close_failures + 1))
+fi
 
-# Same persisted path, new physical process and X11 window.
+# Restart same saved file; Alt+F4 is an independent X11 WM close gesture,
+# not a retry of the first close event on a pending/possibly retired window.
 start_todo
 assert_alive "restart"
 state_matches "open" || fail "restart-lost-task"
-# Task row follows the input row. Click its first Complete/Reopen button.
+echo "todo_native_x11=pass phase=restart-read-persisted"
+if ! close_todo alt-f4; then
+  close_failures=$((close_failures + 1))
+fi
+
+# A third fresh window tests the original Complete click and writeback.
+# Terminating this test-owned process is NOT presented as graceful close.
+start_todo
 xdotool mousemove --window "$window" 38 54 click 1
 await_state "complete" "complete-button"
 echo "todo_native_x11=pass phase=restart-and-complete"
-close_todo
-echo "todo_native_x11=pass physical_x11=true mode=release persistence=true"
+stop_test_process
+if [[ "$close_failures" -ne 0 ]]; then
+  echo "todo_native_x11=fail close_methods=$close_failures physical_x11=true mode=release" >&2
+  exit 1
+fi
+echo "todo_native_x11=pass physical_x11=true mode=release persistence=true close=true"
