@@ -247,10 +247,10 @@ fn actual_todo_add_button_preserves_m13_pointer_settlement() {
 #[test]
 fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
     use runenui_core::{
-        CommittedTextEvent, InputDeviceId, KeyLocation, KeyModifiers,
-        KeyboardCompositionState, KeyboardEvent, KeyboardPhase, LogicalKey, LogicalPoint,
-        PhysicalKey, PointerButton, PointerButtons, PointerDeviceKind, PointerEvent, PointerId,
-        PointerPhase, SurfaceInputContext,
+        CommittedTextEvent, InputDeviceId, KeyLocation, KeyModifiers, KeyboardCompositionState,
+        KeyboardEvent, KeyboardPhase, LogicalKey, LogicalPoint, PhysicalKey, PointerButton,
+        PointerButtons, PointerDeviceKind, PointerEvent, PointerId, PointerPhase,
+        SurfaceInputContext,
     };
     use runenui_runtime::{
         InputArbitrationRecord, InputPumpBatch, PumpBudget, PumpOutcome, RuntimeStatus,
@@ -325,10 +325,7 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         }
     }
 
-    fn prove_text(
-        batch: &InputPumpBatch,
-        sequence: runenui_core::WorkSequence,
-    ) {
+    fn prove_text(batch: &InputPumpBatch, sequence: runenui_core::WorkSequence) {
         assert!(batch.pause_reason().is_none(), "text M13 cannot pause");
         assert_eq!(batch.final_ownership().status(), RuntimeStatus::Running);
         assert!(
@@ -341,9 +338,7 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
             .ordered_records()
             .iter()
             .filter_map(|record| match record {
-                InputArbitrationRecord::InputSettled(settled)
-                    if settled.sequence() == sequence =>
-                {
+                InputArbitrationRecord::InputSettled(settled) if settled.sequence() == sequence => {
                     Some(settled.finality())
                 }
                 _ => None,
@@ -373,10 +368,7 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         )
         .unwrap();
     let style = runenui_core::StyleEnvironment::default();
-    let build = SurfaceBuildContext::tight(
-        &style,
-        LogicalSize::try_new(800.0, 600.0).unwrap(),
-    );
+    let build = SurfaceBuildContext::tight(&style, LogicalSize::try_new(800.0, 600.0).unwrap());
     let displayed = runtime.publish_surface(&build).unwrap();
     let field = displayed
         .frame()
@@ -434,7 +426,9 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         .find(|node| node.placeholder() == Some("New task"))
         .expect("semantic editable survives committed text");
     assert_eq!(
-        semantic_field.editable().and_then(|editable| editable.value()),
+        semantic_field
+            .editable()
+            .and_then(|editable| editable.value()),
         Some("x"),
         "paired committed text updates Todo exactly once"
     );
@@ -443,17 +437,19 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         .frame()
         .nodes()
         .iter()
-        .find(|node| node.authored_id().is_some_and(|id| id.as_str() == "todo.add"))
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.add")
+        })
         .expect("real Add button after edited text")
         .bounds();
-    let add_point = LogicalPoint::new(
-        add.x() + add.width() / 2.0,
-        add.y() + add.height() / 2.0,
-    )
-    .unwrap();
+    let add_point =
+        LogicalPoint::new(add.x() + add.width() / 2.0, add.y() + add.height() / 2.0).unwrap();
     click(&mut runtime, edited.input_context(), add_point, device);
 
-    let saved = storage.load().expect("Todo persisted after original typed input");
+    let saved = storage
+        .load()
+        .expect("Todo persisted after original typed input");
     assert_eq!(saved.tasks().len(), 1, "exactly one task was added");
     assert_eq!(saved.tasks()[0].title(), "x");
     assert!(!saved.tasks()[0].completed());
