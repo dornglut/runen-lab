@@ -109,7 +109,11 @@ mod tests {
         let options = parse_options(["--seed", "18446744073709551615"].map(str::to_owned))
             .expect("u64::MAX should be accepted");
         assert_eq!(options.seed, u64::MAX);
-        assert!(export(options).unwrap().contains("\"seed\":\"18446744073709551615\""));
+        assert!(
+            export(options)
+                .unwrap()
+                .contains("\"seed\":\"18446744073709551615\"")
+        );
     }
 
     #[test]
