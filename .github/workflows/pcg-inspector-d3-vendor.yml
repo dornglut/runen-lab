@@ -30,7 +30,7 @@ jobs:
           grep -q 'https://d3js.org' "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js"
           rm "${RUNNER_TEMP}/d3/second-copy.js"
       - name: Export verified build for repository review
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pcg-inspector-d3-7.9.0
           path: ${{ runner.temp }}/d3/d3.v7.9.0.min.js
