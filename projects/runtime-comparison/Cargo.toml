@@ -1,0 +1,20 @@
+[package]
+name = "runtime-comparison"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+bevy_app = "=0.20.1"
+bevy_ecs = "=0.20.1"
+runen-ecs = { git = "https://github.com/dornglut/runen-ecs", rev = "5d6af86bfa7c58f1ad26ec73635590a72e89ef37" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+sha2 = "0.10.9"
+
+[workspace]
+resolver = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
