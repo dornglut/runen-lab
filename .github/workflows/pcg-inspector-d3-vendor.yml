@@ -1,0 +1,38 @@
+name: PCG Inspector D3 vendor acquisition
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pcg-inspector-d3-vendor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-and-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Compare pinned official npm distribution across CDNs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/d3"
+          curl --fail --silent --show-error --location --retry 3 --max-time 60 'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' -o "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js"
+          curl --fail --silent --show-error --location --retry 3 --max-time 60 'https://unpkg.com/d3@7.9.0/dist/d3.min.js' -o "${RUNNER_TEMP}/d3/second-copy.js"
+          cmp "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js" "${RUNNER_TEMP}/d3/second-copy.js"
+          sha256sum "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js"
+          test "$(wc -c < "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js")" -gt 100000
+          grep -q 'https://d3js.org' "${RUNNER_TEMP}/d3/d3.v7.9.0.min.js"
+          rm "${RUNNER_TEMP}/d3/second-copy.js"
+      - name: Export verified build for repository review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0
+        with:
+          name: pcg-inspector-d3-7.9.0
+          path: ${{ runner.temp }}/d3/d3.v7.9.0.min.js
+          retention-days: 3
+          if-no-files-found: error
