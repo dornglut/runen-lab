@@ -1,0 +1,14 @@
+{
+  "name": "runen-pcg-graph-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Downstream D3 force-directed inspector for RunenPCG structural graphs",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/graph-data.mjs && node --check src/main.mjs && node --check tools/serve.mjs && node --test test/*.test.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "license": "GPL-3.0-only"
+}

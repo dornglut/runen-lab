@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Independent D3 force-directed inspector for RunenPCG topology snapshots">
+  <title>Graph Inspector · Runen Lab</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script type="module" src="./src/main.mjs"></script>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">R</span><span class="brand-name">Runen Lab</span><span class="brand-separator">/</span><strong>Graph Inspector</strong><span class="version">EXPERIMENTAL</span></div>
+    <div class="top-actions"><span class="scope">D3 force · topology only</span><button class="button button-outline" id="sample-button" type="button">Load example</button><label class="button button-primary" for="file-input">Import JSON</label><input id="file-input" type="file" accept="application/json,.json" hidden></div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar" aria-label="Inspector controls">
+      <section class="panel"><div class="eyebrow">DATA SOURCE</div><h1>Graph topology</h1><p class="muted small">Structural data, not physical cave geometry.</p><dl class="stats"><div><dt>Nodes</dt><dd id="node-count">—</dd></div><div><dt>Edges</dt><dd id="edge-count">—</dd></div><div><dt>Cycles</dt><dd id="cycle-count">—</dd></div><div><dt>Branching</dt><dd id="branch-count">—</dd></div></dl><div class="source-meta"><span>Algorithm</span><output id="algorithm" title="Versioned generator identity">—</output><span>Seed</span><output id="seed">—</output></div></section>
+      <section class="panel"><div class="panel-heading"><div><div class="eyebrow">SIMULATION</div><h2>Forces</h2></div><button id="reset-button" class="text-button" type="button">Reset</button></div>
+        <div class="control"><div class="control-line"><label for="charge">Repulsion</label><output id="charge-value" for="charge">−220</output></div><input id="charge" type="range" min="-650" max="-40" step="10" value="-220"></div>
+        <div class="control"><div class="control-line"><label for="link-distance">Link distance</label><output id="link-distance-value" for="link-distance">96</output></div><input id="link-distance" type="range" min="36" max="220" step="2" value="96"></div>
+        <div class="control"><div class="control-line"><label for="collision">Node spacing</label><output id="collision-value" for="collision">22</output></div><input id="collision" type="range" min="14" max="55" step="1" value="22"></div>
+        <div class="control"><div class="control-line"><label for="damping">Damping</label><output id="damping-value" for="damping">0.40</output></div><input id="damping" type="range" min="0.10" max="0.90" step="0.05" value="0.40"></div>
+        <label class="toggle"><input id="show-labels" type="checkbox" checked> Show node IDs</label>
+        <div class="button-row"><button id="toggle-button" class="button button-outline" type="button">Pause motion</button><button id="fit-button" class="button button-outline" type="button">Fit view</button></div>
+      </section>
+      <section class="panel inspection"><div class="eyebrow">SELECTION</div><h2 id="selection-title">No node selected</h2><p class="muted small" id="selection-help">Select a node to inspect its degree and neighbors.</p><div id="selection-body" class="selection-body"></div></section>
+      <p class="sidebar-foot">Drag to move · Double-click to pin · Scroll to zoom · <kbd>P</kbd> on a focused node to pin/unpin</p>
+    </aside>
+
+    <section class="visual-pane" aria-label="Interactive force-directed graph">
+      <div class="visual-toolbar"><span class="live-dot" aria-hidden="true"></span><span id="status" role="status" aria-live="polite">Initializing…</span><div class="toolbar-right"><button id="export-button" class="button button-outline" type="button">Export SVG</button></div></div>
+      <div id="drop-zone" class="canvas-frame"><svg id="graph-svg" role="img" aria-label="Interactive topology graph with draggable nodes" viewBox="0 0 1200 800"><title>Connected graph topology</title></svg><div id="canvas-hint" class="canvas-hint">Drag nodes · Pan background · Wheel zoom</div></div>
+      <div class="visual-footer"><div class="legend"><span><i class="legend-node" aria-hidden="true"></i> Node</span><span><i class="legend-node hub" aria-hidden="true"></i> Branching node</span><span><i class="legend-line" aria-hidden="true"></i> Connection</span></div><span class="muted small">Layout coordinates are not world coordinates</span></div>
+    </section>
+  </main>
+  <div id="error-banner" class="error-banner" role="alert" hidden></div>
+</div>
+</body>
+</html>
