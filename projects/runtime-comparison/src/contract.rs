@@ -255,7 +255,11 @@ pub fn propose(before: &Data, edits: &[Edit]) -> Result<Proposed, &'static str> 
                 dirty.objects.insert(slot);
             }
             Edit::Delete { slot, r#gen } => {
-                if data.objects.get(&slot).is_none_or(|obj| i64::from(obj.r#gen) != r#gen) {
+                if data
+                    .objects
+                    .get(&slot)
+                    .is_none_or(|obj| i64::from(obj.r#gen) != r#gen)
+                {
                     return Err("STALE_OR_UNKNOWN_OBJECT");
                 }
                 data.objects.remove(&slot);
