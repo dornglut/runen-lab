@@ -38,7 +38,9 @@ fn main() -> ExitCode {
         Some("validate") if args.next().is_none() => finish(validate()),
         Some("pcg-inspector") => finish(pcg_inspector(args.collect())),
         _ => {
-            eprintln!("usage: cargo validate | cargo pcg-inspector [generate [--nodes N --cycles N --max-edges N --seed N]]");
+            eprintln!(
+                "usage: cargo validate | cargo pcg-inspector [generate [--nodes N --cycles N --max-edges N --seed N]]"
+            );
             ExitCode::FAILURE
         }
     }
@@ -74,7 +76,9 @@ fn pcg_inspector(mut args: Vec<String>) -> Result<(), String> {
         .arg("--")
         .args(args)
         .current_dir(&root);
-    let status = command.status().map_err(|error| format!("failed to invoke cargo: {error}"))?;
+    let status = command
+        .status()
+        .map_err(|error| format!("failed to invoke cargo: {error}"))?;
     if status.success() {
         Ok(())
     } else {
@@ -116,22 +120,43 @@ fn validate() -> Result<(), String> {
     run(
         &root,
         "cargo",
-        &["fmt", "--manifest-path", "projects/pcg-inspector/exporter/Cargo.toml", "--", "--check"],
-    )?;
-    run(
-        &root,
-        "cargo",
-        &["test", "--manifest-path", "projects/pcg-inspector/exporter/Cargo.toml", "--locked"],
+        &[
+            "fmt",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--",
+            "--check",
+        ],
     )?;
     run(
         &root,
         "cargo",
         &[
-            "clippy", "--manifest-path", "projects/pcg-inspector/exporter/Cargo.toml",
-            "--all-targets", "--locked", "--", "-D", "warnings",
+            "test",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--locked",
         ],
     )?;
-    run(&root, "npm", &["run", "check", "--prefix", "projects/pcg-inspector"])?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "clippy",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+    run(
+        &root,
+        "npm",
+        &["run", "check", "--prefix", "projects/pcg-inspector"],
+    )?;
     run(&root, "git", &["diff", "--check"])?;
 
     let after = git_status(&root)?;
