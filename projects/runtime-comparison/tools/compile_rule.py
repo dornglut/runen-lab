@@ -8,6 +8,8 @@ import argparse
 import json
 import re
 from pathlib import Path
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parent
 p = argparse.ArgumentParser()
@@ -78,8 +80,16 @@ pub fn affected(
     keys
 }
 '''
+# Compare the generated source in its rustfmt-normalized form: Cargo's
+# formatter owns the checked-in representation of generated Rust.
+with tempfile.TemporaryDirectory() as directory:
+    scratch = Path(directory) / 'generated.rs'
+    scratch.write_text(body, encoding='utf-8')
+    subprocess.run(['rustfmt', '--edition', '2024', str(scratch)], check=True)
+    formatted = scratch.read_text(encoding='utf-8')
+
 if a.check:
-    if not a.output.exists() or a.output.read_text() != body:
+    if not a.output.exists() or a.output.read_text(encoding='utf-8') != formatted:
         raise SystemExit('generated Rust is stale')
 else:
-    a.output.write_text(body)
+    a.output.write_text(formatted, encoding='utf-8')

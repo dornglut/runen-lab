@@ -1,6 +1,4 @@
 /target/
 **/target/
 .DS_Store
-.idea/vcs.xml
-.idea/runen-lab.iml
-.idea/modules.xml
+/.idea/

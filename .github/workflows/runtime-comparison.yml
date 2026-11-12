@@ -1,0 +1,72 @@
+name: Runtime comparison oracle qualification
+
+on:
+  pull_request:
+    paths:
+      - "projects/runtime-comparison/**"
+      - ".github/workflows/runtime-comparison.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-oracle:
+    name: Three-way Rust correctness replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Resolve exact feature revision
+        id: revision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) expected="$PULL_REQUEST_HEAD_SHA" ;;
+            workflow_dispatch) expected="$EVENT_SHA" ;;
+            *) echo "Unsupported event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          test -n "$expected"
+          echo "expected=$expected" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.revision.outputs.expected }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify checkout
+        env:
+          EXPECTED: ${{ steps.revision.outputs.expected }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo "Exact head: $EXPECTED"
+
+      - name: Install stable Rust components
+        run: rustup toolchain install stable --profile minimal --component rustfmt clippy
+
+      - name: Record toolchain and dependency revision
+        run: |
+          rustc --version
+          cargo --version
+          git rev-parse HEAD
+
+      - name: Verify restricted generator output
+        run: python3 projects/runtime-comparison/tools/compile_rule.py --check
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path projects/runtime-comparison/Cargo.toml --all -- --check
+
+      - name: Compile and replay both independent oracles
+        run: cargo test --manifest-path projects/runtime-comparison/Cargo.toml --all-targets --locked
+
+      - name: Enforce strict Clippy
+        run: cargo clippy --manifest-path projects/runtime-comparison/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Run optimized three-way replay
+        run: cargo run --manifest-path projects/runtime-comparison/Cargo.toml --release --locked

@@ -33,9 +33,9 @@ struct MaterialStage;
 fn changed_objects(
     mut objects: Query<(&ObjectRecord, &mut PacketComponent), Changed<ObjectRecord>>,
     ids: Res<MaterialEntities>,
-    colors: Query<&MaterialColor>,
+    mut colors: Query<&MaterialColor>,
 ) {
-    for (object, mut output) in objects.iter() {
+    for (object, output) in objects.iter() {
         let mat = ids.0[&object.obj.material];
         let color = colors.get(mat).expect("material exists").0;
         let next = packet(object.obj, color);
@@ -49,7 +49,7 @@ fn changed_materials(
     dirty: Res<DirtyMaterials>,
     ids: Res<MaterialEntities>,
     relations: Relations<BelongsTo>,
-    colors: Query<&MaterialColor>,
+    mut colors: Query<&MaterialColor>,
     mut objects: Query<(&ObjectRecord, &mut PacketComponent)>,
 ) {
     for &material in &dirty.0 {
@@ -57,7 +57,7 @@ fn changed_materials(
         let color = colors.get(entity).expect("material exists").0;
         let users = relations.targets(entity).expect("valid material entity");
         for object_entity in users.iter() {
-            if let Some((object, mut output)) = objects.get(object_entity) {
+            if let Some((object, output)) = objects.get(object_entity) {
                 let next = packet(object.obj, color);
                 if output.0 != next {
                     output.0 = next;
