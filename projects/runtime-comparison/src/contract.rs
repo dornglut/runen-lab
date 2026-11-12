@@ -153,7 +153,7 @@ pub enum Edit {
     },
     Spawn {
         slot: u32,
-        r#gen: u32,
+        r#gen: i64,
         x: i64,
         y: i64,
         radius: i64,
@@ -161,22 +161,22 @@ pub enum Edit {
     },
     Delete {
         slot: u32,
-        r#gen: u32,
+        r#gen: i64,
     },
     Move {
         slot: u32,
-        r#gen: u32,
+        r#gen: i64,
         x: i64,
         y: i64,
     },
     Radius {
         slot: u32,
-        r#gen: u32,
+        r#gen: i64,
         radius: i64,
     },
     Reassign {
         slot: u32,
-        r#gen: u32,
+        r#gen: i64,
         material: u32,
     },
 }
@@ -229,32 +229,33 @@ pub fn propose(before: &Data, edits: &[Edit]) -> Result<Proposed, &'static str> 
                 radius,
                 material,
             } => {
+                let generation = u32::try_from(r#gen).map_err(|_| "INVALID_SPAWN")?;
                 if data.objects.contains_key(&slot)
-                    || r#gen
+                    || Some(generation)
                         != data
                             .versions
                             .get(&slot)
                             .copied()
                             .unwrap_or(0)
-                            .saturating_add(1)
+                            .checked_add(1)
                 {
                     return Err("INVALID_SPAWN");
                 }
                 data.objects.insert(
                     slot,
                     Obj {
-                        r#gen,
+                        r#gen: generation,
                         x,
                         y,
                         radius,
                         material,
                     },
                 );
-                data.versions.insert(slot, r#gen);
+                data.versions.insert(slot, generation);
                 dirty.objects.insert(slot);
             }
             Edit::Delete { slot, r#gen } => {
-                if data.objects.get(&slot).is_none_or(|obj| obj.r#gen != r#gen) {
+                if data.objects.get(&slot).is_none_or(|obj| i64::from(obj.r#gen) != r#gen) {
                     return Err("STALE_OR_UNKNOWN_OBJECT");
                 }
                 data.objects.remove(&slot);
@@ -264,7 +265,7 @@ pub fn propose(before: &Data, edits: &[Edit]) -> Result<Proposed, &'static str> 
                 let obj = data
                     .objects
                     .get_mut(&slot)
-                    .filter(|obj| obj.r#gen == r#gen)
+                    .filter(|obj| i64::from(obj.r#gen) == r#gen)
                     .ok_or("STALE_OR_UNKNOWN_OBJECT")?;
                 obj.x = x;
                 obj.y = y;
@@ -278,7 +279,7 @@ pub fn propose(before: &Data, edits: &[Edit]) -> Result<Proposed, &'static str> 
                 let obj = data
                     .objects
                     .get_mut(&slot)
-                    .filter(|obj| obj.r#gen == r#gen)
+                    .filter(|obj| i64::from(obj.r#gen) == r#gen)
                     .ok_or("STALE_OR_UNKNOWN_OBJECT")?;
                 obj.radius = radius;
                 dirty.objects.insert(slot);
@@ -291,7 +292,7 @@ pub fn propose(before: &Data, edits: &[Edit]) -> Result<Proposed, &'static str> 
                 let obj = data
                     .objects
                     .get_mut(&slot)
-                    .filter(|obj| obj.r#gen == r#gen)
+                    .filter(|obj| i64::from(obj.r#gen) == r#gen)
                     .ok_or("STALE_OR_UNKNOWN_OBJECT")?;
                 obj.material = material;
                 dirty.objects.insert(slot);
