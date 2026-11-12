@@ -48,7 +48,7 @@ jobs:
           echo "Exact head: $EXPECTED"
 
       - name: Install stable Rust components
-        run: rustup toolchain install stable --profile minimal --component rustfmt clippy
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 
       - name: Record toolchain and dependency revision
         run: |
