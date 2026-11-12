@@ -8,6 +8,7 @@ const assets = Object.freeze({
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
+  '/vendor/d3.v7.9.0.min.js': ['vendor/d3.v7.9.0.min.js', 'text/javascript; charset=utf-8'],
   '/src/main.mjs': ['src/main.mjs', 'text/javascript; charset=utf-8'],
   '/src/sample.mjs': ['src/sample.mjs', 'text/javascript; charset=utf-8'],
   '/src/graph-data.mjs': ['src/graph-data.mjs', 'text/javascript; charset=utf-8'],
@@ -48,7 +49,7 @@ export function startServer({ port = 4173, log = console.log } = {}) {
   });
   server.listen(port, '127.0.0.1', () => {
     log(`RunenPCG inspector: http://127.0.0.1:${server.address().port}`);
-    log('Ctrl+C to stop. D3 is currently loaded from its pinned external CDN.');
+    log('Ctrl+C to stop. D3 is served from the repository-local pinned distribution.');
   });
   return server;
 }

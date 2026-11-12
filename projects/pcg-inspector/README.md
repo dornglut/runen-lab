@@ -6,7 +6,7 @@ framework module, generator or physical-geometry implementation.
 
 ## Launch
 
-From the Runen Lab repository root (Node.js 20+ and Rust stable required):
+From the Runen Lab repository root (Node.js 22+ and Rust stable required):
 
 ```sh
 cargo pcg-inspector
@@ -17,9 +17,13 @@ Open the printed local URL, normally `http://127.0.0.1:4173`. Use
 binds to loopback, has an explicit static-file allowlist and uses no remote
 backend. It prints a useful error if its port is occupied.
 
-**Current prototype limitation:** D3 7.9.0 loads from an exact-version CDN URL;
-network access is still required. Offline packaging, supply-chain verification,
-and successful browser interaction tests remain acceptance gates for this project.
+D3 7.9.0 is **vendored locally**, so the viewer works without a CDN. The
+approved distribution was obtained from the successful [D3 vendor-acquisition
+workflow](https://github.com/dornglut/runen-lab/actions/runs/43331991344),
+which byte-compared the pinned jsDelivr and unpkg distributions. Its SHA-256 is
+`f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539`.
+The ISC attribution notice is preserved at [`vendor/LICENSE.d3`](vendor/LICENSE.d3).
+`npm run check` verifies the vendored bytes on each run.
 
 ## Generate actual RunenPCG data
 
@@ -77,8 +81,18 @@ cargo validate
 The Node tests cover schema, negative cases, deterministic presentation seed,
 local HTTP serving and static asset restrictions. A separate locked Rust
 exporter project has public-API golden and failure tests. `cargo validate`
-must include both. These checks do **not** replace browser UI or third-party
-dependency verification.
+must include both. Browser-interaction proof is also provided by an independent Chromium smoke
+check running in the browser workflow. It executes the real SVG, D3 simulation,
+mouse/keyboard events, import errors, export, and reduced-motion handling using
+Playwright 1.57.0. For an explicit local run with Playwright and Chromium installed:
+
+```sh
+python3 projects/pcg-inspector/test/browser_smoke.py
+```
+
+The browser smoke injects project assets into a real Chromium `about:blank` page
+to avoid relying on network access. Independent server tests cover the HTTP
+resource contract. Browser tests do not imply a 3D/physical terrain proof.
 
 ## Ownership and dependency direction
 

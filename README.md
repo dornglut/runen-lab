@@ -7,8 +7,8 @@ The repository is intentionally **not** a framework, specification, or cross-fra
 ## Maturity
 
 Runen Lab has an independent downstream PCG inspector project. Its experimental D3
-viewer is available for local exploration, while real browser verification and
-offline D3 dependency qualification remain explicit acceptance gates.
+viewer is available for local exploration with an offline pinned D3 build.
+Project acceptance remains subject to reviewed exact-head CI and browser proof.
 
 Projects exercise accepted framework APIs but do not thereby establish framework
 support or consumer-release claims.

@@ -36,3 +36,14 @@ test('HEAD reports asset metadata without a body', async (t) => {
   assert.ok(Number(response.headers.get('content-length')) > 0);
   assert.equal(await response.text(), '');
 });
+
+
+test('serves the pinned offline D3 distribution and blocks unknown vendor files', async (t) => {
+  const base = await runningServer(t);
+  const response = await fetch(`${base}/vendor/d3.v7.9.0.min.js`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /javascript/);
+  assert.equal(Number(response.headers.get('content-length')), 279706);
+  assert.match(await response.text(), /d3js.org v7.9.0/);
+  assert.equal((await fetch(`${base}/vendor/unknown.js`)).status, 404);
+});

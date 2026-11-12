@@ -15,7 +15,7 @@ function showError(message) {
 }
 
 if (!d3) {
-  showError('D3 failed to load. The first prototype requires internet access to its pinned D3 CDN file.');
+  showError('D3 failed to load. Verify that the local pinned D3 file is present.');
   $('status').textContent = 'D3 unavailable';
 } else {
   initialize();

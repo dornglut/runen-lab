@@ -6,7 +6,7 @@
   "description": "Downstream D3 force-directed inspector for RunenPCG structural graphs",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/graph-data.mjs && node --check src/main.mjs && node --check tools/serve.mjs && node --test test/*.test.mjs",
+    "check": "node tools/verify-vendor.mjs && node --check src/graph-data.mjs && node --check src/main.mjs && node --check tools/serve.mjs && node --test test/*.test.mjs",
     "serve": "node tools/serve.mjs"
   },
   "engines": { "node": ">=22" },

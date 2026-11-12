@@ -1,0 +1,34 @@
+name: PCG Inspector Browser
+
+on:
+  pull_request:
+    paths:
+      - 'projects/pcg-inspector/**'
+      - '.github/workflows/pcg-inspector-browser.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Install isolated browser test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/pcg-browser"
+          "${RUNNER_TEMP}/pcg-browser/bin/python" -m pip install --disable-pip-version-check 'playwright==1.57.0'
+          "${RUNNER_TEMP}/pcg-browser/bin/python" -m playwright install chromium
+      - name: Run actual Chromium interaction smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/pcg-browser/bin/python" projects/pcg-inspector/test/browser_smoke.py
