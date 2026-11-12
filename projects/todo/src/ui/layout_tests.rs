@@ -605,11 +605,7 @@ impl<const PROFILE: usize> UiApp for TodoInitialBudgetProbe<PROFILE> {
             0 => TodoUi::initial_producer_budget(state),
             // One bounded extra turn of retained reconciliation work, with
             // unchanged application outputs and interaction profile.
-            1 => ProducerBudget::new(nodes + 2, 0).with_reconciliation(
-                nodes,
-                1,
-                nodes,
-            ),
+            1 => ProducerBudget::new(nodes + 2, 0).with_reconciliation(nodes, 1, nodes),
             // Broader bounded initial reconciliation/output control.
             // Queue credits cover mounted identities plus retained updates,
             // rather than creating an impossible producer profile.
