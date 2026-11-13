@@ -16,22 +16,73 @@ const REQUIRED_FILES: &[&str] = &[
     ".github/workflows/validate.yml",
     "tools/xtask/Cargo.toml",
     "tools/xtask/src/main.rs",
+    "projects/pcg-inspector/README.md",
+    "projects/pcg-inspector/index.html",
+    "projects/pcg-inspector/styles.css",
+    "projects/pcg-inspector/package.json",
+    "projects/pcg-inspector/src/main.mjs",
+    "projects/pcg-inspector/src/graph-data.mjs",
+    "projects/pcg-inspector/src/sample.mjs",
+    "projects/pcg-inspector/tools/serve.mjs",
+    "projects/pcg-inspector/test/graph-data.test.mjs",
+    "projects/pcg-inspector/test/server.test.mjs",
+    "projects/pcg-inspector/fixtures/sample.json",
+    "projects/pcg-inspector/exporter/Cargo.toml",
+    "projects/pcg-inspector/exporter/Cargo.lock",
+    "projects/pcg-inspector/exporter/src/main.rs",
 ];
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
-    match (args.next().as_deref(), args.next()) {
-        (Some("validate"), None) => match validate() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("validation failed: {error}");
-                ExitCode::FAILURE
-            }
-        },
+    match args.next().as_deref() {
+        Some("validate") if args.next().is_none() => finish(validate()),
+        Some("pcg-inspector") => finish(pcg_inspector(args.collect())),
         _ => {
-            eprintln!("usage: cargo validate");
+            eprintln!(
+                "usage: cargo validate | cargo pcg-inspector [generate [--nodes N --cycles N --max-edges N --seed N]]"
+            );
             ExitCode::FAILURE
         }
+    }
+}
+
+fn finish(result: Result<(), String>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("command failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn pcg_inspector(mut args: Vec<String>) -> Result<(), String> {
+    let root = repository_root()?;
+    let project = root.join("projects/pcg-inspector");
+    if args.is_empty() {
+        return run(&root, "node", &["projects/pcg-inspector/tools/serve.mjs"]);
+    }
+    if args.remove(0) != "generate" {
+        return Err("expected `cargo pcg-inspector` or `cargo pcg-inspector generate`".into());
+    }
+    let manifest = project.join("exporter/Cargo.toml");
+    let mut command = Command::new("cargo");
+    command
+        .arg("run")
+        .arg("--locked")
+        .arg("--quiet")
+        .arg("--manifest-path")
+        .arg(manifest)
+        .arg("--")
+        .args(args)
+        .current_dir(&root);
+    let status = command
+        .status()
+        .map_err(|error| format!("failed to invoke cargo: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("RunenPCG exporter failed: {status}"))
     }
 }
 
@@ -65,6 +116,46 @@ fn validate() -> Result<(), String> {
             "-D",
             "warnings",
         ],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "fmt",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--",
+            "--check",
+        ],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "test",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--locked",
+        ],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "clippy",
+            "--manifest-path",
+            "projects/pcg-inspector/exporter/Cargo.toml",
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+    run(
+        &root,
+        "npm",
+        &["run", "check", "--prefix", "projects/pcg-inspector"],
     )?;
     run(&root, "git", &["diff", "--check"])?;
 

@@ -1,0 +1,12 @@
+[package]
+name = "pcg-inspector-exporter"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+runen-pcg = { git = "https://github.com/dornglut/runen-pcg", rev = "7de282455492959ff1bacd0c3e8a78ad37215306" }
