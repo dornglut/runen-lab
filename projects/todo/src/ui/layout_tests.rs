@@ -524,8 +524,29 @@ fn separated_task_cards_have_real_vertical_gaps() {
             .unwrap_or_else(|| panic!("missing rendered task card: {id}"))
             .bounds()
     };
-    // All's visible order is Active 1, Active 3, then Completed 2.
+    // Top-level section rhythm must be visible at the default window size.
+    // Check published geometry rather than merely asserting gap tokens exist.
+    let summary = bounds("todo.summary");
+    let add = bounds("todo.add");
+    let filter = bounds("todo.filter.all");
+    let section = bounds("todo.section-title");
     let first = bounds("task.1.row");
+    assert!(
+        add.y() - (summary.y() + summary.height()) >= 20.0,
+        "header summary and task composer need distinct vertical spacing"
+    );
+    assert!(
+        filter.y() - (add.y() + add.height()) >= 20.0,
+        "task composer and status filters need distinct vertical spacing"
+    );
+    assert!(
+        section.y() - (filter.y() + filter.height()) >= 20.0,
+        "filters and task-list section heading need distinct vertical spacing"
+    );
+    assert!(
+        first.y() - (section.y() + section.height()) >= 20.0,
+        "task-list section heading must not touch the first task card"
+    );
     let second = bounds("task.3.row");
     let completed = bounds("task.2.row");
     assert!(
