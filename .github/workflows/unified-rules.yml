@@ -1,0 +1,63 @@
+name: Unified typed rule semantics qualification
+
+on:
+  pull_request:
+    paths:
+      - "projects/unified-rules/**"
+      - ".github/workflows/unified-rules.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-proof:
+    name: Exact-head unified typed-rule consumer proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Resolve exact revision
+        id: rev
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) target="$PR_SHA" ;;
+            workflow_dispatch) target="$SHA" ;;
+            *) exit 1 ;;
+          esac
+          test -n "$target"
+          echo "sha=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.rev.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact revision
+        env:
+          EXPECTED: ${{ steps.rev.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+
+      - name: Locked manifest
+        run: cargo metadata --manifest-path projects/unified-rules/Cargo.toml --locked --no-deps --format-version 1 > /dev/null
+
+      - name: Rustfmt
+        run: cargo fmt --manifest-path projects/unified-rules/Cargo.toml --all -- --check
+
+      - name: Compile and test independent consumers
+        run: cargo test --manifest-path projects/unified-rules/Cargo.toml --all-targets --locked
+
+      - name: Strict Clippy
+        run: cargo clippy --manifest-path projects/unified-rules/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Optimized semantic proof
+        run: cargo test --manifest-path projects/unified-rules/Cargo.toml --release --all-targets --locked
