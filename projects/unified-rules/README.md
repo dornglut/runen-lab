@@ -226,6 +226,31 @@ Where durable processing is inappropriate (e.g. GPU/frame completion),
 effect ownership can instead use lifecycle/epoch/cancellation semantics.
 Neither policy establishes universal purity or exactly-once delivery.
 
+## Terminal result intake and cancellation race — bounded consumer
+
+`tests/effect_lifecycle_candidate.rs` uses the actual project-local
+`Engine::compute::<Each<View>>`, typed state facts and `cx.request(T)`
+to request a task, observe submitted/completed/failed/cancelled state,
+and propagate the result into derived state without a separate rule
+scheduler. Each `WorkTicket` contains a generational entity `Key`
+and independent operation revision. Reports must match the pending typed
+request and current ticket before entering the transaction.
+
+A separate **simulated** executor handles submission and reports. The
+tests challenge completion-vs-cancel races, cancellation rejection, stale
+results after revision replacement and entity generation reuse, repeated
+reports and unrelated input invalidation, and rollback when terminal
+admission fails. `CancelRequested` is not terminal cancellation, and
+a failed terminal-state transaction must leave the request pending.
+
+**Not proven:** The executor is test-local glue with no real I/O.
+Terminal input admission and `acknowledge_effect` remain separate calls
+with a visible crash gap, and there are no durable operation IDs, real
+concurrency, leases, cross-process replay, or enforced rule purity.
+The consumer demonstrates possible typed semantics **and the API
+boilerplate they require**; it does not establish an accepted unified
+public API or reliable delivery.
+
 ## Reproduce
 
 ```sh

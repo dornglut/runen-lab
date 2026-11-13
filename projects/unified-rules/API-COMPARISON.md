@@ -234,6 +234,51 @@ full Bevy/RunenECS equivalence/performance gates remain unproven. The F suite
 does not establish at-least-once delivery in a real system, and never claims
 external exactly-once effects. Retain RULE-03, RULE-06, RULE-07 on **HOLD**.
 
+## G — typed terminal-result intake and cancellation races (real Lab consumer)
+
+The independent `tests/effect_lifecycle_candidate.rs` uses the actual
+`Engine::compute::<Each<View>>` and `Engine::transact` interfaces for
+typed intent, operation state, current derived view, and staged
+`WorkCommand { WorkTicket { Key, revision }, kind }` requests. A separate,
+simulated executor drives the boundary; it is **consumer-local glue**, not
+a new engine scheduler, shared Lab framework or approved frontend.
+
+The candidate's admission policy:
+- **Requested → submitted → terminal**; `CancelRequested` is an
+  intermediate state, *not* proof of cancellation. Completion may win a
+  cancellation race, or an acknowledged cancellation may win. Cancel rejection
+  returns the still-running operation to `Submitted`.
+- A terminal report must match the pending `EffectId`, its typed payload's
+  exact `WorkTicket` and origin, the current live `Key` generation, and
+  the current operation revision. Old-generation or obsolete completions
+  do not overwrite new state. Duplicate/late reports cannot overwrite a
+  terminal result.
+- Accepted terminal reports enter as **ordinary typed input state**
+  via `Engine::transact`; therefore dependent `View` is derived using
+  the same rule model, and a later failing validation rule rejects the
+  entire terminal state transition. The effect remains unacknowledged
+  if admission fails.
+- `cx.changed::<Intent>` and
+  `cx.changed::<CancelRequested>` avoid generating repeat commands when
+  unrelated dependencies change. This is a **consumer-authored transition
+  discipline**, not a generic kernel guarantee of logical idempotency.
+
+**Critical counterevidence / HOLD:** The executor is an in-memory simulation,
+and its `submit`/`report` methods are necessary external orchestration,
+not magically unified into one rule. The terminal state transaction
+and `acknowledge_effect` are still **two separate steps**; an interruption
+between them leaves a terminal fact and a pending request. The test models
+that gap and handles repeated observation within the same Engine instance.
+There is no real worker, concurrency, durability, persistence, replay across
+Engine reconstruction, claim/lease authority or external exactly-once
+proof. Nor is cancellation guaranteed to stop physical execution just
+because a cancel command was staged. Rules remain impure and serial.
+
+**Disposition:** Bounded typed lifecycle admission and race model may be
+a useful semantic primitive, but do **not** adopt it as a final engine API.
+The frontend still requires manually authored command orchestration and
+transaction/admission glue, so RULE-03 / RULE-06 / RULE-07 remain **HOLD**.
+
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in
