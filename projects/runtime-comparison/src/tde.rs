@@ -79,7 +79,13 @@ impl Tde {
                 self.materials.insert(material, color);
             }
         }
-        self.versions.clone_from(&after.versions);
+        for &slot in &dirty.objects {
+            if let Some(&generation) = after.versions.get(&slot) {
+                self.versions.insert(slot, generation);
+            } else {
+                self.versions.remove(&slot);
+            }
+        }
         let affected = generated::affected(
             &previous_groups,
             &self.inverse,

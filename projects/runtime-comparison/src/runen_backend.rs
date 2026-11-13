@@ -204,7 +204,13 @@ impl RunenBackend {
         }
         self.world
             .insert_resource(DirtyMaterials(dirty.materials.iter().copied().collect()));
-        self.versions.clone_from(&after.versions);
+        for &slot in &dirty.objects {
+            if let Some(&generation) = after.versions.get(&slot) {
+                self.versions.insert(slot, generation);
+            } else {
+                self.versions.remove(&slot);
+            }
+        }
         self.runtime
             .run_schedule::<Update>(&mut self.world)
             .expect("schedule");

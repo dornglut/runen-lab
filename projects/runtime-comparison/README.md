@@ -26,10 +26,22 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo run --release --locked
 ```
 
+## Exploratory same-host benchmark
+
+The exact-head GitHub workflow also compiles the Release binary and samples four deterministic workloads with 2,048 objects: one-object sparse position changes, all-object dense position changes, shared-material fanout, and subset relation reassignment. It executes each backend in separate processes and rotates execution order over six rounds. The workflow archives raw CSV rows and OS/CPU/toolchain information. The summary reports median **propagation-and-publication latency per update**, not whole-transaction latency.
+
+To reproduce manually after `cargo build --release --locked`:
+
+```sh
+python3 tools/run_benchmarks.py --binary target/release/runtime-comparison --output benchmark-raw.csv --rounds 6 --objects 2048
+```
+
+The timed region includes backend mutation, native scheduling, index updates, and derived publication. Precomputed authoritative before/after states, transaction admission, setup, input decoding, and correctness readback are **excluded**. Setup time is measured separately. Memory fields are Linux process RSS at baseline/after setup and peak high-water mark; they are **not** precise per-backend allocation measurements. A single GitHub-hosted machine, fixed schema, and this specialized application cannot establish general-purpose superiority. Repeated independent hosts, additional sizes, admission, retained-memory, and developer coordination remain unresolved.
+
 The repository-level `cargo validate` remains a separate required gate. A project-specific GitHub workflow runs this replay on the exact PR head; project validation integration is coordinated with Runen Lab draft PR #8 and must not overwrite that owner's independent work.
 
 ## Evidence and limitations
 
-The fixtures were verified independently in Python; that is not Rust execution evidence. Real Rust correctness requires successful exact-head project tests and replay. Benchmarks are **not implemented** in this candidate. Any future comparison must time equivalent operations on one host, include update propagation and publications, report memory and user-authored coordination, preserve native ECS capabilities, and retain raw measurements. This project must not be used as proof that TDE outperforms Bevy or RunenECS.
+The fixtures were verified independently in Python; that is not Rust execution evidence. Real Rust correctness requires successful exact-head project tests and replay. The exploratory Release benchmark is implemented but does not yet establish a general comparison. Any future comparison must time equivalent operations on one host, include update propagation and publications, report memory and user-authored coordination, preserve native ECS capabilities, and retain raw measurements. This project must not be used as proof that TDE outperforms Bevy or RunenECS.
 
 Issue: https://github.com/dornglut/runen-lab/issues/9

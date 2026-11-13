@@ -1,5 +1,6 @@
 //! Three-way deterministic Rust semantic replay using independent reference fixtures.
 //! Not a performance comparison; see README.md for limitations.
+mod bench;
 mod bevy_backend;
 mod contract;
 mod generated;
@@ -209,6 +210,12 @@ pub fn replay(text: &str) -> usize {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--bench") {
+        bench::run(&args[1..]);
+        return;
+    }
+    assert!(args.is_empty(), "usage: runtime-comparison [--bench BACKEND WORKLOAD OBJECTS ITERATIONS]");
     let original = include_str!("../fixtures/oracle.jsonl");
     let extended = include_str!("../fixtures/extended.jsonl");
     println!("original cases: {}", replay(original));

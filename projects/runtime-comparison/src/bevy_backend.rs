@@ -167,7 +167,13 @@ impl BevyBackend {
                 (None, None) => {}
             }
         }
-        self.versions.clone_from(&after.versions);
+        for &slot in &dirty.objects {
+            if let Some(&generation) = after.versions.get(&slot) {
+                self.versions.insert(slot, generation);
+            } else {
+                self.versions.remove(&slot);
+            }
+        }
         self.app.update();
     }
 

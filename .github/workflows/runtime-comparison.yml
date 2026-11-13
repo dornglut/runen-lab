@@ -70,3 +70,31 @@ jobs:
 
       - name: Run optimized three-way replay
         run: cargo run --manifest-path projects/runtime-comparison/Cargo.toml --release --locked
+
+      - name: Record benchmark hardware and toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runtime-comparison"
+          {
+            echo "Revision: $(git rev-parse HEAD)"
+            echo "OS: $(uname -a)"
+            rustc -Vv
+            cargo --version
+            lscpu
+          } > "$RUNNER_TEMP/runtime-comparison/environment.txt"
+
+      - name: Collect alternating same-host Release samples
+        run: |
+          python3 projects/runtime-comparison/tools/run_benchmarks.py \
+            --binary projects/runtime-comparison/target/release/runtime-comparison \
+            --output "$RUNNER_TEMP/runtime-comparison/raw.csv" \
+            --rounds 6 --objects 2048
+
+      - name: Preserve raw exploratory benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-comparison-${{ steps.revision.outputs.expected }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/runtime-comparison/**
