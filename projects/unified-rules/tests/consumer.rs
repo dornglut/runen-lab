@@ -269,3 +269,113 @@ fn invalid_writes_and_overflow_preserve_visible_world() -> Result<(), Error> {
     );
     Ok(())
 }
+
+#[test]
+fn dynamic_reparent_replaces_read_dependencies() -> Result<(), Error> {
+    let mut game = new_game();
+    let a = Key::new(1, 1);
+    let b = Key::new(2, 1);
+    let child = Key::new(3, 1);
+    game.transact(|tx| {
+        for key in [a, b, child] {
+            tx.spawn(key)?;
+        }
+        tx.put(a, Local(10))?;
+        tx.put(b, Local(100))?;
+        tx.put(child, Local(1))?;
+        tx.put(child, Parent(a))?;
+        Ok(())
+    })?;
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(11)));
+
+    game.transact(|tx| tx.put(child, Parent(b)))?;
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(101)));
+
+    // Moving the former parent must NOT invalidate the child.
+    game.transact(|tx| tx.put(a, Local(20)))?;
+    assert_eq!(game.last_evaluations(), 1);
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(101)));
+
+    // Moving the new parent must invalidate parent and child, exactly.
+    game.transact(|tx| tx.put(b, Local(200)))?;
+    assert_eq!(game.last_evaluations(), 2);
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(201)));
+    Ok(())
+}
+
+#[test]
+fn independently_computed_hierarchy_oracle_over_changing_tree() -> Result<(), Error> {
+    let mut game = new_game();
+    const COUNT: usize = 128;
+    let mut local: Vec<i64> = (0..COUNT).map(|i| (i % 7) as i64).collect();
+    let mut parents: Vec<Option<usize>> = (0..COUNT)
+        .map(|i| (i > 0).then(|| (i - 1) / 2))
+        .collect();
+    game.transact(|tx| {
+        for slot in 0..COUNT {
+            tx.spawn(Key::new(slot as u32, 1))?;
+        }
+        for slot in 0..COUNT {
+            let key = Key::new(slot as u32, 1);
+            tx.put(key, Local(local[slot]))?;
+            if let Some(parent) = parents[slot] {
+                tx.put(key, Parent(Key::new(parent as u32, 1)))?;
+            }
+        }
+        Ok(())
+    })?;
+
+    for round in 0..128_usize {
+        let slot = (round * 37 % (COUNT - 1)) + 1;
+        let key = Key::new(slot as u32, 1);
+        if round % 2 == 0 {
+            local[slot] = round as i64 * 3 - 25;
+            game.transact(|tx| tx.put(key, Local(local[slot])))?;
+        } else {
+            // Parent is always a lower slot, so this reference tree is acyclic.
+            let parent = (round * 11) % slot;
+            parents[slot] = Some(parent);
+            game.transact(|tx| tx.put(key, Parent(Key::new(parent as u32, 1))))?;
+        }
+
+        // Independent, deliberately simple full-world oracle in index order.
+        let mut expected = vec![0_i64; COUNT];
+        for i in 0..COUNT {
+            expected[i] = local[i] + parents[i].map_or(0, |p| expected[p]);
+        }
+        for (i, &world) in expected.iter().enumerate() {
+            assert_eq!(
+                game.get::<WorldPosition>(Key::new(i as u32, 1)),
+                Some(WorldPosition(world)),
+                "round {round}, slot {i}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn derived_overflow_rolls_back_source_and_all_derived_outputs() -> Result<(), Error> {
+    let mut game = new_game();
+    let parent = Key::new(1, 1);
+    let child = Key::new(2, 1);
+    game.transact(|tx| {
+        tx.spawn(parent)?;
+        tx.spawn(child)?;
+        tx.put(parent, Local(10))?;
+        tx.put(child, Local(5))?;
+        tx.put(child, Parent(parent))?;
+        Ok(())
+    })?;
+    assert_eq!(game.get::<WorldPosition>(parent), Some(WorldPosition(10)));
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(15)));
+
+    assert_eq!(
+        game.transact(|tx| tx.put(parent, Local(i64::MAX))),
+        Err(Error::Overflow)
+    );
+    assert_eq!(game.get::<Local>(parent), Some(Local(10)));
+    assert_eq!(game.get::<WorldPosition>(parent), Some(WorldPosition(10)));
+    assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(15)));
+    Ok(())
+}
