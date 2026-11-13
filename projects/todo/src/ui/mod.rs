@@ -46,6 +46,18 @@ fn ui_font(size: u16, bold: bool) -> Typography {
     }
 }
 
+fn vertically_centered_row_layout() -> LayoutStyle {
+    // with_layout replaces the complete authored style; include both the
+    // horizontal Flex container and its gap to retain cross-axis alignment.
+    LayoutStyle::default()
+        .with_container(LayoutContainer::Flex(
+            FlexContainerStyle::default()
+                .with_direction(FlexDirection::Row)
+                .with_align_items(ItemAlignment::Center),
+        ))
+        .with_gap(LogicalLength::from(theme::SPACE_3))
+}
+
 // Opt-in, content-free native interaction diagnostics. This does not change
 // RunenUI's M13 receipt, document, or event ownership.
 fn diagnostics_enabled() -> bool {
@@ -267,7 +279,7 @@ impl UiApp for TodoUi {
                     .radius(theme::radius(theme::SPACE_2))
                     .into_element(),
             ])
-            .gap(LogicalLength::from(theme::SPACE_3))
+            .with_layout(vertically_centered_row_layout())
             .background(theme::SURFACE)
             .padding(theme::all(theme::SPACE_3))
             .radius(theme::radius(theme::SPACE_3))
@@ -436,18 +448,7 @@ impl UiApp for TodoUi {
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                     ])
-                    // Center the intrinsic title text box against the action
-                    // buttons. The default Flex Stretch makes the title box
-                    // full-height while its glyphs remain top-aligned.
-                    .with_layout(
-                        LayoutStyle::default()
-                            .with_container(LayoutContainer::Flex(
-                                FlexContainerStyle::default()
-                                    .with_direction(FlexDirection::Row)
-                                    .with_align_items(ItemAlignment::Center),
-                            ))
-                            .with_gap(LogicalLength::from(theme::SPACE_3)),
-                    )
+                    .with_layout(vertically_centered_row_layout())
                     .background(if done { theme::SURFACE } else { theme::TASK })
                     .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                     .radius(theme::radius(theme::SPACE_3))
@@ -500,7 +501,7 @@ impl UiApp for TodoUi {
                         .radius(theme::radius(theme::SPACE_2))
                         .into_element(),
                 ])
-                .gap(LogicalLength::from(theme::SPACE_3))
+                .with_layout(vertically_centered_row_layout())
                 .key("todo.page.row")
                 .into_element(),
             );
