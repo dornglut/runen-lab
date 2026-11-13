@@ -74,6 +74,12 @@ jobs:
       - name: Build the actual independent Todo Release binary
         run: cargo +stable build --manifest-path projects/todo/Cargo.toml --release --locked
 
+      - name: Qualify native X11 resize and application survival
+        run: |
+          set -euo pipefail
+          timeout 60s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+            bash projects/todo/scripts/native-x11-resize-smoke.sh
+
       - name: Resolve public UI targets for native clicks
         run: |
           set -euo pipefail
