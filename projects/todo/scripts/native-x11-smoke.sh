@@ -209,24 +209,9 @@ xdotool mousemove --window "$window" "${target_x[field]}" "${target_y[field]}" c
 sleep 0.5
 assert_alive "restored-field-click"
 echo "todo_native_x11=pass phase=restored-field-click"
+# Require the actual published native-font target to work as the first
+# original XTEST click. No coordinate search, retry, or UI-path bypass.
 xdotool mousemove --window "$window" "${target_x[toggle]}" "${target_y[toggle]}" click 1
-sleep 1
-if ! state_matches "complete"; then
-  # Diagnostic only: distinguish a native font/layout offset from an
-  # unresponsive routed action. Each trial remains original OS XTEST input,
-  # and we stop after the first durable completion.
-  echo "todo_native_x11=diagnostic stage=toggle-hit-offset"
-  for dy in -36 -24 -12 12 24 36 48 60; do
-    candidate_y=$((target_y[toggle] + dy))
-    if (( candidate_y < 1 || candidate_y > 599 )); then continue; fi
-    xdotool mousemove --window "$window" "${target_x[toggle]}" "$candidate_y" click 1
-    sleep 0.5
-    if state_matches "complete"; then
-      echo "todo_native_x11=observed-toggle-offset dy=$dy y=$candidate_y"
-      break
-    fi
-  done
-fi
 await_state "complete" "complete-button"
 echo "todo_native_x11=pass phase=restored-task-completed"
 if ! close_todo after-complete; then

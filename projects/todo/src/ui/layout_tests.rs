@@ -814,14 +814,13 @@ fn native_smoke_click_targets() {
         })
         .unwrap();
     let state = TodoUiState::new(service);
-    let mut runtime = AppRuntime::<TodoUi>::mount(state).unwrap();
-    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
-    runtime
-        .set_text_generic_family_mapping(
-            GenericFontFamily::SansSerif,
-            &[FontFamilyName::new("Cantarell").unwrap()],
-        )
-        .unwrap();
+    // Mirror the native host's SystemAndBundled policy exactly. In contrast,
+    // ordinary deterministic layout tests deliberately use an isolated font.
+    // Do not manufacture click positions with a font profile the native
+    // Release application does not use.
+    let config = runenui_runtime::RuntimeConfig::default()
+        .with_text_font_source_policy(runenui_runtime::FontSourcePolicy::SystemAndBundled);
+    let mut runtime = AppRuntime::<TodoUi>::mount_with_config(state, config).unwrap();
     let style = runenui_core::StyleEnvironment::default();
     let publication = runtime
         .publish_surface(&SurfaceBuildContext::tight(
@@ -918,7 +917,11 @@ fn native_smoke_click_targets() {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(exact.len(), 1, "native-target test original {phase:?} receipt");
+        assert_eq!(
+            exact.len(),
+            1,
+            "native-target test original {phase:?} receipt"
+        );
         assert!(matches!(exact[0], UiInputFinality::Committed(_)));
     }
     assert!(
