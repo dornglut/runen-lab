@@ -247,16 +247,20 @@ impl FakeExecutor {
         if effect.origin != EventOrigin::Key(request.ticket.key) {
             return Ok(Decision::Rejected);
         }
-        let Some(intent) = engine.get::<Intent>(request.ticket.key) else {
-            return Ok(Decision::Stale);
-        };
-        let Some(state) = engine.get::<Execution>(request.ticket.key) else {
+        let current = (
+            engine.get::<Intent>(request.ticket.key),
+            engine.get::<Execution>(request.ticket.key),
+        );
+        let (Some(intent), Some(state)) = current else {
+            // Nothing was submitted. Retire an obsolete queued request.
+            engine.acknowledge_effect(id);
             return Ok(Decision::Stale);
         };
         if intent.revision != request.ticket.revision
             || state.revision != request.ticket.revision
             || state.phase.terminal()
         {
+            engine.acknowledge_effect(id);
             return Ok(Decision::Stale);
         }
         match request.kind {
@@ -652,5 +656,43 @@ fn despawned_generational_key_cannot_receive_a_late_completion() -> Result<(), E
         Decision::Applied
     );
     assert_eq!(phase(&engine, reused), Some(Phase::Completed));
+    Ok(())
+}
+
+
+#[test]
+fn obsolete_queued_requests_retire_before_dispatch_without_leaking_outbox() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+
+    create(&mut engine, A, 1)?;
+    let old = pending(&engine, ticket(A, 1), CommandKind::Start);
+    replace(&mut engine, A, 2)?;
+    assert_eq!(engine.pending_effects::<WorkCommand>().len(), 2);
+    assert_eq!(executor.submit(&mut engine, old)?, Decision::Stale);
+    assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
+    assert_eq!(phase(&engine, A), Some(Phase::Queued));
+
+    let current = pending(&engine, ticket(A, 2), CommandKind::Start);
+    assert_eq!(executor.submit(&mut engine, current)?, Decision::Applied);
+    assert_eq!(phase(&engine, A), Some(Phase::Submitted));
+
+    // Also retire a request whose record was deleted and whose slot has
+    // been reused by an entirely different Key generation.
+    create(&mut engine, B, 1)?;
+    let removed = pending(&engine, ticket(B, 1), CommandKind::Start);
+    engine.transact(|tx| tx.despawn(B))?;
+    let reused = Key::new(B.slot, B.generation + 1);
+    create(&mut engine, reused, 1)?;
+    assert_eq!(executor.submit(&mut engine, removed)?, Decision::Stale);
+    assert_eq!(phase(&engine, reused), Some(Phase::Queued));
+    assert_eq!(
+        engine
+            .pending_effects::<WorkCommand>()
+            .into_iter()
+            .filter(|effect| effect.value.ticket.key == reused)
+            .count(),
+        1
+    );
     Ok(())
 }

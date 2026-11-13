@@ -253,7 +253,8 @@ The candidate's admission policy:
 - A terminal report must match the pending `EffectId`, its typed payload's
   exact `WorkTicket` and origin, the current live `Key` generation, and
   the current operation revision. Old-generation or obsolete completions
-  do not overwrite new state. Duplicate/late reports cannot overwrite a
+  do not overwrite new state. An unsubmitted obsolete queued request is
+  retired without dispatch. Duplicate/late reports cannot overwrite a
   terminal result.
 - Accepted terminal reports enter as **ordinary typed input state**
   via `Engine::transact`; therefore dependent `View` is derived using

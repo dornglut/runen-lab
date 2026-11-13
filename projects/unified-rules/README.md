@@ -239,7 +239,8 @@ request and current ticket before entering the transaction.
 A separate **simulated** executor handles submission and reports. The
 tests challenge completion-vs-cancel races, queued-before-submit cancellation,
 cancellation rejection, stale results after revision replacement and entity
-generation reuse even with an old in-flight request, repeated
+generation reuse even with an old in-flight request, stale queued-request
+retirement before dispatch, repeated
 reports and unrelated input invalidation, and rollback when terminal
 admission fails. `CancelRequested` is not terminal cancellation, and
 a failed terminal-state transaction must leave the request pending.
