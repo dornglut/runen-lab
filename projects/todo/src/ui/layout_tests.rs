@@ -531,6 +531,15 @@ fn separated_task_cards_have_real_vertical_gaps() {
     let filter = bounds("todo.filter.all");
     let section = bounds("todo.section-title");
     let first = bounds("task.1.row");
+    eprintln!(
+        "todo_section_spacing: summary={summary:?} add={add:?} filter={filter:?} section={section:?} first={first:?} gaps={:?}",
+        [
+            add.y() - (summary.y() + summary.height()),
+            filter.y() - (add.y() + add.height()),
+            section.y() - (filter.y() + filter.height()),
+            first.y() - (section.y() + section.height()),
+        ]
+    );
     assert!(
         add.y() - (summary.y() + summary.height()) >= 20.0,
         "header summary and task composer need distinct vertical spacing"
