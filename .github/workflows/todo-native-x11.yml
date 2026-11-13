@@ -81,8 +81,8 @@ jobs:
           cargo +stable test --manifest-path projects/todo/Cargo.toml --locked native_smoke_click_targets -- --nocapture >"$output" 2>&1 || { cat "$output"; exit 1; }
           cat "$output"
           targets="$RUNNER_TEMP/todo-native-targets.txt"
-          grep -oE 'TODO_NATIVE_TARGET (field|add|toggle|remove|reopen|page-next|page-first|page-previous|page-last) [0-9]+ [0-9]+' "$output" > "$targets"
-          test "$(wc -l < "$targets")" -eq 9
+          grep -oE 'TODO_NATIVE_TARGET (field|add|toggle|remove|reopen|remove-reopened|page-next|page-first|page-previous|page-last) [0-9]+ [0-9]+' "$output" > "$targets"
+          test "$(wc -l < "$targets")" -eq 10
           echo "TODO_NATIVE_TARGETS_FILE=$targets" >> "$GITHUB_ENV"
 
       - name: Run original X11 mouse and keyboard interaction

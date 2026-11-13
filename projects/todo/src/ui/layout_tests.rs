@@ -1035,6 +1035,136 @@ fn native_smoke_click_targets() {
     let reopen_x = (reopen.x() + reopen.width() / 2.0).round() as u32;
     let reopen_y = (reopen.y() + reopen.height() / 2.0).round() as u32;
     println!("TODO_NATIVE_TARGET reopen {reopen_x} {reopen_y}");
+    // A persisted Reopen commit is not evidence that the UI's displayed
+    // geometry has switched back from the completed group. Publish the
+    // actual reopened state, and derive the next native Remove target there.
+    // First prove the transition through ordinary M13 pointer finality.
+    let reopen_point = LogicalPoint::new(
+        reopen.x() + reopen.width() / 2.0,
+        reopen.y() + reopen.height() / 2.0,
+    )
+    .unwrap();
+    let reopened_context = completed_publication.input_context().clone();
+    let reopened_pointer = PointerId::new(10).unwrap();
+    for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+        let mut event = PointerEvent::new(
+            reopened_pointer,
+            PointerDeviceKind::Mouse,
+            phase,
+            reopen_point,
+            reopened_context.clone(),
+        )
+        .with_device_id(device);
+        if phase == PointerPhase::Down {
+            event = event
+                .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                .with_changed_button(PointerButton::Primary);
+        } else if phase == PointerPhase::Up {
+            event = event.with_changed_button(PointerButton::Primary);
+        }
+        let submitted = runtime.submit_pointer(event).unwrap();
+        let batch = runtime.pump(PumpBudget::new(128, 128, 128, 128)).unwrap();
+        assert_eq!(batch.final_ownership().status(), RuntimeStatus::Running);
+        assert!(
+            batch
+                .processed_through()
+                .is_some_and(|through| through >= submitted.sequence())
+        );
+        let exact = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(receipt)
+                    if receipt.sequence() == submitted.sequence() =>
+                {
+                    Some(receipt.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(exact.len(), 1, "native fixture Reopen {phase:?} receipt");
+        assert!(matches!(exact[0], UiInputFinality::Committed(_)));
+    }
+    assert!(!runtime.state().service.tasks()[0].completed());
+    let reopened_publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .unwrap();
+    let reopened_remove = reopened_publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|authored| authored.as_str() == "task.1.remove")
+        })
+        .expect("reopened task publishes Remove")
+        .bounds();
+    assert!(
+        reopened_remove.width() >= 12.0
+            && reopened_remove.height() >= 12.0
+            && reopened_remove.x() >= 0.0
+            && reopened_remove.y() >= 0.0
+            && reopened_remove.x() + reopened_remove.width() <= 800.0
+            && reopened_remove.y() + reopened_remove.height() <= 600.0,
+        "reopened Remove target outside native viewport: {reopened_remove:?}"
+    );
+    let remove_x = (reopened_remove.x() + reopened_remove.width() / 2.0).round() as u32;
+    let remove_y = (reopened_remove.y() + reopened_remove.height() / 2.0).round() as u32;
+    println!("TODO_NATIVE_TARGET remove-reopened {remove_x} {remove_y}");
+
+    // This is headless API-route proof. The smoke script still must deliver
+    // its own *original* XTEST button click; never substitute this ingress.
+    let remove_point = LogicalPoint::new(
+        reopened_remove.x() + reopened_remove.width() / 2.0,
+        reopened_remove.y() + reopened_remove.height() / 2.0,
+    )
+    .unwrap();
+    let remove_context = reopened_publication.input_context().clone();
+    let remove_pointer = PointerId::new(11).unwrap();
+    for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+        let mut event = PointerEvent::new(
+            remove_pointer,
+            PointerDeviceKind::Mouse,
+            phase,
+            remove_point,
+            remove_context.clone(),
+        )
+        .with_device_id(device);
+        if phase == PointerPhase::Down {
+            event = event
+                .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                .with_changed_button(PointerButton::Primary);
+        } else if phase == PointerPhase::Up {
+            event = event.with_changed_button(PointerButton::Primary);
+        }
+        let submitted = runtime.submit_pointer(event).unwrap();
+        let batch = runtime.pump(PumpBudget::new(128, 128, 128, 128)).unwrap();
+        assert_eq!(batch.final_ownership().status(), RuntimeStatus::Running);
+        assert!(
+            batch
+                .processed_through()
+                .is_some_and(|through| through >= submitted.sequence())
+        );
+        let exact = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(receipt)
+                    if receipt.sequence() == submitted.sequence() =>
+                {
+                    Some(receipt.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(exact.len(), 1, "native fixture Remove {phase:?} receipt");
+        assert!(matches!(exact[0], UiInputFinality::Committed(_)));
+    }
+    assert!(runtime.state().service.tasks().is_empty());
+    assert!(TodoStorage::at(path.clone()).load().unwrap().tasks().is_empty());
     // Separate native-font publications for both pages prove that original
     // OS clicks have reachable targets after paging without relying on a
     // fixed pixel offset or an artificial title width.

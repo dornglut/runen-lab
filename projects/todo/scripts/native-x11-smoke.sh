@@ -200,7 +200,7 @@ while read -r label name x y; do
   target_x["$name"]="$x"
   target_y["$name"]="$y"
 done < "$TODO_NATIVE_TARGETS_FILE"
-for name in field add toggle remove reopen page-next page-first page-previous page-last; do
+for name in field add toggle remove reopen remove-reopened page-next page-first page-previous page-last; do
   [[ -n "${target_x[$name]:-}" && -n "${target_y[$name]:-}" ]] || fail "native-geometry-incomplete"
   echo "todo_native_x11=target name=$name x=${target_x[$name]} y=${target_y[$name]}"
 done
@@ -319,7 +319,9 @@ state_matches "complete" || fail "reopen-restart-lost-completed-state"
 xdotool mousemove --window "$window" "${target_x[reopen]}" "${target_y[reopen]}" click 1
 await_state "open" "reopen-button"
 echo "todo_native_x11=pass phase=native-reopen-persisted"
-xdotool mousemove --window "$window" "${target_x[remove]}" "${target_y[remove]}" click 1
+# Target coordinates are published from the *reopened* task state,
+# not assumed to match the initial or completed row layout.
+xdotool mousemove --window "$window" "${target_x[remove-reopened]}" "${target_y[remove-reopened]}" click 1
 await_state "empty" "remove-button"
 echo "todo_native_x11=pass phase=native-remove-persisted"
 if ! close_todo after-remove; then
