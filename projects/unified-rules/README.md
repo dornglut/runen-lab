@@ -89,7 +89,7 @@ The preceding candidate comparison found a structural deficiency: the runtime
 identified every task by an entity key. Merely hiding a fake summary key was
 not a complete architectural solution. This bounded kernel experiment adds
 **separate keyed and singleton task/fact identities and typed keyless storage**,
-with one experimental developer-facing `Engine::derive::<Shape>()` registration
+with one experimental developer-facing `Engine::compute::<Shape>()` registration
 method. `Each<T>` is evaluated for each living record and `One<T>` once for
 the world. The old `Engine::rule::<T>` API stays available only to preserve
 the existing qualified consumers; it is **not** being ratified as a competing
@@ -98,10 +98,10 @@ public API.
 Example from independently compiled consumer:
 
 ```rust
-app.derive::<Each<LineTotal>>(|ctx, key| {
+app.compute::<Each<LineTotal>>(|ctx, key| {
     // ... checked calculation for each key ...
 })?;
-app.derive::<One<InvoiceTotal>>(|ctx, ()| {
+app.compute::<One<InvoiceTotal>>(|ctx, ()| {
     // ... dependent typed collection reduction ...
 })?;
 ```

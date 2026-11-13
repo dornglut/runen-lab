@@ -1,5 +1,5 @@
 //! Compile-qualified typed output scopes, not a new accepted framework API.
-//! Every rule uses Engine::derive; no fake key, app-maintained index, or
+//! Every rule uses Engine::compute; no fake key, app-maintained index, or
 //! separate scheduling path for keyless computation is introduced.
 use unified_rules::{Each, Engine, Error, Key, One, SingletonChange};
 
@@ -29,7 +29,7 @@ const SECOND: Key = Key::new(1, 1);
 
 fn invoice() -> Result<Engine, Error> {
     let mut engine = Engine::new();
-    engine.derive::<Each<LineTotal>>(|cx, key| {
+    engine.compute::<Each<LineTotal>>(|cx, key| {
         cx.get::<Line>(key)?
             .map(|line| {
                 line.price
@@ -39,7 +39,7 @@ fn invoice() -> Result<Engine, Error> {
             })
             .transpose()
     })?;
-    engine.derive::<One<InvoiceTotal>>(|cx, ()| {
+    engine.compute::<One<InvoiceTotal>>(|cx, ()| {
         let sum = cx
             .all::<LineTotal>()?
             .into_iter()
@@ -48,7 +48,7 @@ fn invoice() -> Result<Engine, Error> {
             })?;
         Ok(Some(InvoiceTotal(sum)))
     })?;
-    engine.derive::<One<OverLimit>>(|cx, ()| {
+    engine.compute::<One<OverLimit>>(|cx, ()| {
         let Some(InvoiceTotal(total)) = cx.singleton::<InvoiceTotal>()? else {
             return Ok(None);
         };
@@ -57,7 +57,7 @@ fn invoice() -> Result<Engine, Error> {
         };
         Ok(Some(OverLimit(total > limit)))
     })?;
-    engine.derive::<Each<GlobalFlag>>(|cx, key| {
+    engine.compute::<Each<GlobalFlag>>(|cx, key| {
         let Some(OverLimit(over)) = cx.singleton::<OverLimit>()? else {
             return Ok(None);
         };
@@ -157,8 +157,8 @@ fn missing_keyless_input_retracts_global_and_keyed_outputs() -> Result<(), Error
 #[test]
 fn cross_scope_self_cycle_rejects_initial_commit() -> Result<(), Error> {
     let mut app = Engine::new();
-    app.derive::<One<Temp>>(|cx, ()| Ok(cx.singleton::<Link>()?.map(|value| Temp(value.0))))?;
-    app.derive::<One<Link>>(|cx, ()| Ok(cx.singleton::<Temp>()?.map(|value| Link(value.0))))?;
+    app.compute::<One<Temp>>(|cx, ()| Ok(cx.singleton::<Link>()?.map(|value| Temp(value.0))))?;
+    app.compute::<One<Link>>(|cx, ()| Ok(cx.singleton::<Temp>()?.map(|value| Link(value.0))))?;
     assert_eq!(app.transact(|_| Ok(())), Err(Error::RuleCycle));
     assert_eq!(app.singleton::<Temp>(), None);
     assert_eq!(app.singleton::<Link>(), None);
@@ -168,7 +168,7 @@ fn cross_scope_self_cycle_rejects_initial_commit() -> Result<(), Error> {
 #[test]
 fn global_occurrences_cannot_claim_a_fictitious_entity_origin() -> Result<(), Error> {
     let mut app = Engine::new();
-    app.derive::<One<Temp>>(|cx, ()| {
+    app.compute::<One<Temp>>(|cx, ()| {
         cx.emit(Pulse(1))?;
         Ok(Some(Temp(1)))
     })?;

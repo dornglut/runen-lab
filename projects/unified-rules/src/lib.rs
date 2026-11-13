@@ -574,7 +574,7 @@ impl Engine {
     }
 
     /// Single registration form with an explicit typed output scope.
-    pub fn derive<S: OutputShape>(
+    pub fn compute<S: OutputShape>(
         &mut self,
         f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, S::At) -> Result<Option<S::Value>, Error> + 'static,
     ) -> Result<(), Error> {
