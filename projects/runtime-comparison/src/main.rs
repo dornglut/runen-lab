@@ -215,7 +215,10 @@ fn main() {
         bench::run(&args[1..]);
         return;
     }
-    assert!(args.is_empty(), "usage: runtime-comparison [--bench BACKEND WORKLOAD OBJECTS ITERATIONS]");
+    assert!(
+        args.is_empty(),
+        "usage: runtime-comparison [--bench BACKEND WORKLOAD OBJECTS ITERATIONS]"
+    );
     let original = include_str!("../fixtures/oracle.jsonl");
     let extended = include_str!("../fixtures/extended.jsonl");
     println!("original cases: {}", replay(original));

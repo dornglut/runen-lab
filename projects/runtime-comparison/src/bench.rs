@@ -134,7 +134,11 @@ pub fn run(args: &[String]) {
     let peak_rss = linux_memory_kib("VmHWM:");
 
     assert_eq!(consumer.data(), before, "final authoritative source state");
-    assert_eq!(consumer.packets(), before.packets(), "final published packets");
+    assert_eq!(
+        consumer.packets(),
+        before.packets(),
+        "final published packets"
+    );
 
     println!(
         "BENCH,{backend},{workload},{size},{iterations},{setup_ns},{apply_ns},{},{},{}",
