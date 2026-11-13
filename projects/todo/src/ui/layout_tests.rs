@@ -307,7 +307,7 @@ fn short_viewport_scrolls_with_original_runenui_wheel_input() {
         layout.scrollable_extent().height() > layout.scroll_viewport_extent().height(),
         "fixture must genuinely overflow the viewport"
     );
-    let scroll_y = |runtime: &AppRuntime<TodoUi>| {
+    let scroll_y = |runtime: &mut AppRuntime<TodoUi>| {
         runtime
             .index()
             .nodes()
@@ -318,7 +318,7 @@ fn short_viewport_scrolls_with_original_runenui_wheel_input() {
             .scroll_offset()
             .1
     };
-    assert_eq!(scroll_y(&runtime), 0.0);
+    assert_eq!(scroll_y(&mut runtime), 0.0);
 
     let event = PointerEvent::new(
         PointerId::new(299).unwrap(),
@@ -338,7 +338,7 @@ fn short_viewport_scrolls_with_original_runenui_wheel_input() {
         ))
         .unwrap();
     assert!(
-        scroll_y(&runtime) > 0.0,
+        scroll_y(&mut runtime) > 0.0,
         "RunenUI wheel interaction must move Todo's own scroll offset"
     );
     runtime.publish_surface(&build).unwrap();
