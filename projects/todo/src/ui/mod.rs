@@ -202,9 +202,7 @@ impl UiApp for TodoUi {
                     LayoutStyle::default()
                         .with_width(LayoutDimension::length(LogicalLength::from(240_u16)))
                         .with_min_width(LayoutBound::length(LogicalLength::from(110_u16)))
-                        .with_flex_item(
-                            FlexItemStyle::default().with_grow(LayoutFactor::ONE),
-                        ),
+                        .with_flex_item(FlexItemStyle::default().with_grow(LayoutFactor::ONE)),
                 )
                 .placeholder("What needs doing?")
                 .background(Color::rgb(34, 46, 64))
@@ -311,11 +309,9 @@ impl UiApp for TodoUi {
                                 Color::rgb(233, 241, 248)
                             })
                             .typography(ui_font(14, false))
-                            .with_layout(
-                                LayoutStyle::default().with_flex_item(
-                                    FlexItemStyle::default().with_grow(LayoutFactor::ONE),
-                                ),
-                            )
+                            .with_layout(LayoutStyle::default().with_flex_item(
+                                FlexItemStyle::default().with_grow(LayoutFactor::ONE),
+                            ))
                             .into_element(),
                         button("Remove")
                             .id(format!("task.{}.remove", id.get()))
