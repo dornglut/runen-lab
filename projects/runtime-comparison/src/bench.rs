@@ -266,31 +266,6 @@ pub fn run(args: &[String]) {
     );
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{states, transition_edits};
-    use crate::contract::propose;
-
-    #[test]
-    fn benchmark_transactions_follow_the_shared_contract() {
-        for size in [32, 128] {
-            for workload in ["noop", "sparse", "dense", "fanout", "reassign"] {
-                let (before, after, dirty) = states(size, workload);
-                let forward = transition_edits(&before, &after, &dirty);
-                let reverse = transition_edits(&after, &before, &dirty);
-                let accepted = propose(&before, &forward).expect("forward accepted");
-                assert_eq!(accepted.data, after);
-                assert_eq!(accepted.dirty.objects, dirty.objects);
-                assert_eq!(accepted.dirty.materials, dirty.materials);
-                assert_eq!(
-                    propose(&after, &reverse).expect("reverse accepted").data,
-                    before
-                );
-            }
-        }
-    }
-}
-
 pub fn diagnostic(args: &[String]) {
     assert_eq!(
         args.len(),
@@ -341,5 +316,30 @@ pub fn diagnostic(args: &[String]) {
             println!("PROFILE,runen,noop,{size},{iterations},{resource_ns},{schedule_ns}");
         }
         _ => panic!("unknown diagnostic backend: {backend}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{states, transition_edits};
+    use crate::contract::propose;
+
+    #[test]
+    fn benchmark_transactions_follow_the_shared_contract() {
+        for size in [32, 128] {
+            for workload in ["noop", "sparse", "dense", "fanout", "reassign"] {
+                let (before, after, dirty) = states(size, workload);
+                let forward = transition_edits(&before, &after, &dirty);
+                let reverse = transition_edits(&after, &before, &dirty);
+                let accepted = propose(&before, &forward).expect("forward accepted");
+                assert_eq!(accepted.data, after);
+                assert_eq!(accepted.dirty.objects, dirty.objects);
+                assert_eq!(accepted.dirty.materials, dirty.materials);
+                assert_eq!(
+                    propose(&after, &reverse).expect("reverse accepted").data,
+                    before
+                );
+            }
+        }
     }
 }
