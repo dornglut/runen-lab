@@ -139,12 +139,11 @@ fn modeled_atomic_state_and_outbox_cover_crash_before_and_after_commit() -> Resu
 
     // Restart after commit, before external dispatch: the pending request
     // survives because it shares the modeled atomic checkpoint.
-    let recovered = ModeledAtomicStore::restore(snapshot);
+    let mut recovered = ModeledAtomicStore::restore(snapshot);
     assert_eq!(recovered.checkpoint.business.get(&7), Some(&20));
     assert_eq!(recovered.checkpoint.pending.get(&FIRST), Some(&command(FIRST, 20)));
 
     // A rejected transaction cannot publish either domain state or intent.
-    let mut recovered = recovered;
     let before = recovered.checkpoint.clone();
     assert_eq!(
         recovered.transact(|next| {
@@ -252,12 +251,11 @@ fn real_lab_engine_uses_volatile_request_ids_and_loses_work_on_recreation() -> R
 
     // This is a real kernel API counterexample, not the model above:
     // Engine::new() cannot reconstruct the pending outbox or the prior state.
-    let recreated = actual_lab_engine()?;
+    let mut recreated = actual_lab_engine()?;
     assert!(recreated.pending_effects::<Email>().is_empty());
     assert_eq!(recreated.singleton::<Source>(), None);
 
     // A new process-local sequence may reuse an earlier numeric EffectId.
-    let mut recreated = recreated;
     recreated.transact(|tx| tx.put_singleton(Source(true)))?;
     assert_eq!(recreated.pending_effects::<Email>()[0].id, first_id);
     Ok(())
