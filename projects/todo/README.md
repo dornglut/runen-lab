@@ -78,8 +78,11 @@ composer, filter controls, list cards, and pagination. The root fills the
 available logical window height, clips horizontal overflow and uses RunenUI's
 runtime-owned vertical scrolling when content exceeds the window. Composer,
 filters, task action rows and pagination wrap according to available width,
-with no device-name or viewport-width breakpoint; a maximum content width of 780 logical units
-remains a readability constraint, not a fixed window size.
+with no device-name or viewport-width breakpoint. The task page itself also
+fills the available viewport width (minus its content padding); it is no
+longer fixed at a maximum of 780 logical units. A wider window therefore
+gives task rows and controls more space, rather than expanding only the
+background.
 
 The app still renders at most five task rows per filtered page to keep the
 mounted work bounded until RunenUI M12 virtual collections are available.
