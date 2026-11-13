@@ -32,17 +32,27 @@ cargo run --release --locked
 
 Benchmarks cover noop scheduler baseline, one-object sparse edits, all-object dense changes, material fanout, and relation reassignment. They include a fourth, deliberately simple **full-recompute reference** (copying the complete state and rebuilding packets), which is not an ECS. No baseline or stage may be reported as a framework-wide ranking.
 
-The exact-head GitHub workflow also compiles the Release binary and samples five deterministic workloads at 128 and 2,048 objects in both timing modes. It executes each backend in separate processes and rotates execution order over six rounds. The workflow archives raw CSV rows and OS/CPU/toolchain information. The summary reports separate median propagation-only and shared-admission transaction latency per update; neither represents a complete independently implemented application stack.
+The exact-head GitHub workflow compiles the Release binary and samples five deterministic workloads at **1,024 and 65,536 objects** in both timing modes. A separate isolated job attempts the **1,000,000-object** tier using the same binary, contract, and sample format. Memory failures and per-process timeouts are recorded rather than silently excluded. It executes each backend in separate processes and rotates execution order over three rotated rounds. The workflow archives raw CSV rows and OS/CPU/toolchain information. The summary reports separate median propagation-only and shared-admission transaction latency per update; neither represents a complete independently implemented application stack.
 
 To reproduce manually after `cargo build --release --locked`:
 
 ```sh
-python3 tools/run_benchmarks.py --binary target/release/runtime-comparison --output benchmark-raw.csv --rounds 6 --objects 128 2048
+python3 tools/run_benchmarks.py --binary target/release/runtime-comparison --output benchmark-raw.csv --rounds 3 --objects 1024 65536
 ```
 
 Both timed regions include backend mutation, native scheduling, index updates, and derived publication. Transaction mode includes shared admission and state cloning; propagation mode excludes them. Setup, input decoding, and correctness readback remain **excluded**. Setup time is measured separately. Memory fields are Linux process RSS at baseline/after setup and peak high-water mark; they are **not** precise per-backend allocation measurements. The `transaction` mode uses one common staging implementation, not an independently implemented backend admission path. A single GitHub-hosted machine, fixed schema, and this specialized application cannot establish general-purpose superiority. Repeated independent hosts, additional sizes, independently implemented admission, retained-memory, and developer coordination remain unresolved.
 
 The repository-level `cargo validate` remains a separate required gate. A project-specific GitHub workflow runs this replay on the exact PR head; project validation integration is coordinated with Runen Lab draft PR #8 and must not overwrite that owner's independent work.
+
+## Experimental custom candidates
+
+Two project-local Rust strategies in `src/candidates.rs` implement the **same correctness interface** as Bevy, RunenECS and the original TDE. `compact` stores live objects and derived packets in a compact `Vec`, uses a `HashMap` directory for sparse/arbitrary slot IDs, and maintains material-to-object lists with swap-remove tracking. It avoids a second tree of packets and avoids cloning/sorting affected material groups. `adaptive` uses the same storage and chooses a complete packet refresh when the estimated affected count is at least one quarter of the current live object count. That threshold is a **candidate heuristic**, not an optimized or accepted constant.
+
+Both candidates are replayed against every one of the **28,022** independent oracle cases and additional sparse-slot, generation reuse, and mixed-dependency tests. These strategies share a fixed application schema and handwritten maintenance logic: they are **not a typed general-purpose TDE compiler, not ECS replacements, and not a final ergonomic API**.
+
+The intended competitive criteria are lower latency than Bevy/RunenECS where achievable **without discarding correctness, memory, or developer-cost evidence**. None is presumed faster before measurements. Even a million-object success on this one join would not prove general scalability.
+
+`run_benchmarks.py` records *success, failure, and timeout* for every sample. Large cases use different repetition counts per backend to avoid excessive work on slow backends; counts are included in the raw CSV. A median calculated from fewer than the requested three successful rounds is censored/incomplete and must not be treated as a valid victory. Measurements are process-isolated and report RSS after setup and peak, but not full retained allocation tracing.
 
 ## Stage diagnostics (instrumented)
 

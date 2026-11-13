@@ -2,6 +2,7 @@
 //! Transaction mode includes admission; fixture parsing, setup, and readback are excluded.
 use crate::Consumer;
 use crate::bevy_backend::BevyBackend;
+use crate::candidates::{CompactTde, Strategy};
 use crate::contract::{Data, Dirty, Edit, Key, Obj, Packet, propose};
 use crate::runen_backend::RunenBackend;
 use crate::tde::Tde;
@@ -177,7 +178,7 @@ pub fn run(args: &[String]) {
         matches!(mode, "propagation" | "transaction"),
         "unknown benchmark mode"
     );
-    assert!((32..=100_000).contains(&size), "object count out of range");
+    assert!((32..=1_000_000).contains(&size), "object count out of range");
     assert!(
         (2..=100_000).contains(&iterations) && iterations.is_multiple_of(2),
         "iteration count must be even and bounded"
@@ -203,6 +204,8 @@ pub fn run(args: &[String]) {
         "tde" => Box::new(Tde::new(&before)),
         "bevy" => Box::new(BevyBackend::new(&before)),
         "runen" => Box::new(RunenBackend::new(&before)),
+        "compact" => Box::new(CompactTde::new(&before, Strategy::Indexed)),
+        "adaptive" => Box::new(CompactTde::new(&before, Strategy::Adaptive)),
         "recompute" => Box::new(FullRecompute::new(&before)),
         _ => panic!("unknown backend: {backend}"),
     };
@@ -276,7 +279,7 @@ pub fn diagnostic(args: &[String]) {
     let workload = args[1].as_str();
     let size: u32 = args[2].parse().expect("integer object count");
     let iterations: usize = args[3].parse().expect("integer iterations");
-    assert!((32..=100_000).contains(&size), "object count out of range");
+    assert!((32..=1_000_000).contains(&size), "object count out of range");
     assert!((2..=100_000).contains(&iterations) && iterations.is_multiple_of(2));
 
     let (before, after, dirty) = states(size, workload);

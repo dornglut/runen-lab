@@ -1,4 +1,4 @@
-name: Runtime comparison oracle qualification
+name: Runtime comparison and three-scale candidate qualification
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ jobs:
   rust-oracle:
     name: Three-way Rust correctness replay
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 80
     steps:
       - name: Resolve exact feature revision
         id: revision
@@ -88,14 +88,14 @@ jobs:
           python3 projects/runtime-comparison/tools/run_benchmarks.py \
             --binary projects/runtime-comparison/target/release/runtime-comparison \
             --output "$RUNNER_TEMP/runtime-comparison/raw.csv" \
-            --rounds 6 --objects 128 2048
+            --rounds 3 --objects 1024 65536 --timeout 240
 
       - name: Collect separately instrumented stage diagnostics
         run: |
           set -euo pipefail
           {
             echo "Diagnostic timestamps change the measurement; not a performance ranking."
-            for size in 128 2048; do
+            for size in 1024 65536; do
               for workload in noop sparse dense fanout reassign; do
                 projects/runtime-comparison/target/release/runtime-comparison \
                   --diagnostic tde "$workload" "$size" 100
@@ -113,3 +113,70 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: ${{ runner.temp }}/runtime-comparison/**
+
+  million-scale:
+    name: Million-object comparison (isolated, failure-aware)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Resolve PR head
+        id: revision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) expected="$PR_SHA" ;;
+            workflow_dispatch) expected="$EVENT_SHA" ;;
+            *) exit 1 ;;
+          esac
+          test -n "$expected"
+          echo "expected=$expected" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.revision.outputs.expected }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact source
+        env:
+          EXPECTED: ${{ steps.revision.outputs.expected }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Build locked release candidate
+        run: cargo build --manifest-path projects/runtime-comparison/Cargo.toml --release --locked
+
+      - name: Record host resources
+        run: |
+          mkdir -p "$RUNNER_TEMP/runtime-million"
+          {
+            git rev-parse HEAD
+            rustc -Vv
+            uname -a
+            lscpu
+            free -h
+            cat /sys/fs/cgroup/memory.max 2>/dev/null || true
+          } > "$RUNNER_TEMP/runtime-million/environment.txt"
+
+      - name: Run million-object benchmark with explicit failures
+        run: |
+          python3 projects/runtime-comparison/tools/run_benchmarks.py \
+            --binary projects/runtime-comparison/target/release/runtime-comparison \
+            --output "$RUNNER_TEMP/runtime-million/raw.csv" \
+            --rounds 3 --objects 1000000 --timeout 240 --allow-incomplete
+
+      - name: Preserve raw million-scale evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-million-${{ steps.revision.outputs.expected }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/runtime-million/**

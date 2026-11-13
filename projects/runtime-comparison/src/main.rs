@@ -1,6 +1,7 @@
 //! Three-way deterministic Rust semantic replay using independent reference fixtures.
 //! Not a performance comparison; see README.md for limitations.
 mod bench;
+mod candidates;
 mod bevy_backend;
 mod contract;
 mod generated;
@@ -8,6 +9,7 @@ mod runen_backend;
 mod tde;
 
 use bevy_backend::BevyBackend;
+use candidates::{CompactTde, Strategy};
 use contract::{
     Data, Dirty, Expected, HeaderRow, Key, Packet, TraceCase, changed_packets, packet_digest,
     propose,
@@ -23,6 +25,20 @@ trait Consumer {
     fn packets(&self) -> BTreeMap<Key, Packet>;
 }
 
+impl Consumer for CompactTde {
+    fn label(&self) -> &'static str {
+        CompactTde::label(self)
+    }
+    fn apply(&mut self, previous: &Data, next: &Data, dirty: &Dirty) {
+        CompactTde::apply(self, previous, next, dirty);
+    }
+    fn data(&self) -> Data {
+        CompactTde::data(self)
+    }
+    fn packets(&self) -> BTreeMap<Key, Packet> {
+        CompactTde::packets(self)
+    }
+}
 impl Consumer for Tde {
     fn label(&self) -> &'static str {
         "generated-tde"
@@ -152,6 +168,8 @@ pub fn replay(text: &str) -> usize {
     );
     let mut consumers: Vec<Box<dyn Consumer>> = vec![
         Box::new(Tde::new(&state)),
+        Box::new(CompactTde::new(&state, Strategy::Indexed)),
+        Box::new(CompactTde::new(&state, Strategy::Adaptive)),
         Box::new(BevyBackend::new(&state)),
         Box::new(RunenBackend::new(&state)),
     ];
