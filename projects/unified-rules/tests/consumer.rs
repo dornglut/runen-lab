@@ -762,3 +762,189 @@ fn multiple_rule_producers_have_unambiguous_per_key_event_ordinals() -> Result<(
     );
     Ok(())
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Contribution(i64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Weighted(i64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Total(i64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChildCount(usize);
+
+const SUMMARY: Key = Key::new(0, 1);
+
+/// Two independent applications of the *same* rule API: aggregation over a
+/// derived typed collection and an inverse relationship count.
+fn collection_game() -> Engine {
+    let mut game = Engine::new();
+    game.rule::<Weighted>(|ctx, key| {
+        Ok(ctx
+            .get::<Contribution>(key)?
+            .map(|value| Weighted(value.0 * 2)))
+    })
+    .unwrap();
+    game.rule::<Total>(|ctx, key| {
+        if key != SUMMARY {
+            return Ok(None);
+        }
+        let value = ctx.all::<Weighted>()?.into_iter().try_fold(
+            0_i64,
+            |sum, (_, contribution)| {
+                sum.checked_add(contribution.0).ok_or(Error::Overflow)
+            },
+        )?;
+        Ok(Some(Total(value)))
+    })
+    .unwrap();
+    game.rule::<ChildCount>(|ctx, key| {
+        let count = ctx
+            .all::<Parent>()?
+            .into_iter()
+            .filter(|(_, Parent(parent))| *parent == key)
+            .count();
+        Ok(Some(ChildCount(count)))
+    })
+    .unwrap();
+    game
+}
+
+#[test]
+fn aggregation_and_relation_collection_follow_independent_oracles() -> Result<(), Error> {
+    let mut game = collection_game();
+    const COUNT: usize = 32;
+    let mut values: Vec<Option<i64>> = (0..COUNT)
+        .map(|i| Some(i64::try_from(i).expect("small index")))
+        .collect();
+    let mut generations = [1_u32; COUNT];
+    let mut parents: Vec<Option<Key>> = (0..COUNT)
+        .map(|i| (i > 0).then_some(SUMMARY))
+        .collect();
+
+    game.transact(|tx| {
+        tx.spawn(SUMMARY)?;
+        for (i, &value) in values.iter().enumerate() {
+            let key = Key::new(i as u32 + 1, 1);
+            tx.spawn(key)?;
+            if let Some(value) = value {
+                tx.put(key, Contribution(value))?;
+            }
+            if let Some(parent) = parents[i] {
+                tx.put(key, Parent(parent))?;
+            }
+        }
+        Ok(())
+    })?;
+
+    for round in 0..96_usize {
+        let index = (round * 17) % COUNT;
+        let key = Key::new(index as u32 + 1, generations[index]);
+        if round % 7 == 0 && values[index].is_some() {
+            game.transact(|tx| {
+                tx.remove::<Contribution>(key)?;
+                tx.remove::<Parent>(key)?;
+                Ok(())
+            })?;
+            values[index] = None;
+            parents[index] = None;
+        } else if round % 7 == 1 && values[index].is_none() {
+            let value = round as i64;
+            game.transact(|tx| {
+                tx.put(key, Contribution(value))?;
+                tx.put(key, Parent(SUMMARY))?;
+                Ok(())
+            })?;
+            values[index] = Some(value);
+            parents[index] = Some(SUMMARY);
+        } else if round % 7 == 2 && values[index].is_some() {
+            // Reparent to another currently live key.
+            let destination = Key::new((index + 1) as u32 % COUNT as u32 + 1, generations[(index + 1) % COUNT]);
+            game.transact(|tx| tx.put(key, Parent(destination)))?;
+            parents[index] = Some(destination);
+        } else if round % 7 == 3 {
+            game.transact(|tx| {
+                tx.despawn(key)?;
+                tx.spawn(Key::new(key.slot, key.generation + 1))?;
+                Ok(())
+            })?;
+            generations[index] += 1;
+            values[index] = None;
+            parents[index] = None;
+        } else {
+            let value = round as i64 - 15;
+            game.transact(|tx| tx.put(key, Contribution(value)))?;
+            values[index] = Some(value);
+        }
+
+        let expected_total: i64 = values.iter().flatten().sum::<i64>() * 2;
+        assert_eq!(
+            game.get::<Total>(SUMMARY),
+            Some(Total(expected_total)),
+            "round {round}: derived aggregation"
+        );
+        // A separate full-vector oracle; no runtime-level parent index.
+        for target in 0..COUNT {
+            let parent = Key::new(target as u32 + 1, generations[target]);
+            let count = parents.iter().filter(|&&p| p == Some(parent)).count();
+            assert_eq!(
+                game.get::<ChildCount>(parent),
+                Some(ChildCount(count)),
+                "round {round}, target {target}"
+            );
+        }
+        let root_count = parents.iter().filter(|&&p| p == Some(SUMMARY)).count();
+        assert_eq!(game.get::<ChildCount>(SUMMARY), Some(ChildCount(root_count)));
+    }
+    Ok(())
+}
+
+#[test]
+fn aggregation_tracks_new_members_deleted_members_and_rolls_back_overflow() -> Result<(), Error> {
+    let mut game = collection_game();
+    let a = Key::new(1, 1);
+    let b = Key::new(2, 1);
+    game.transact(|tx| {
+        tx.spawn(SUMMARY)?;
+        tx.spawn(a)?;
+        tx.put(a, Contribution(3))?;
+        Ok(())
+    })?;
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(6)));
+    game.transact(|tx| {
+        tx.spawn(b)?;
+        tx.put(b, Contribution(5))?;
+        Ok(())
+    })?;
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(16)));
+    game.transact(|tx| tx.remove::<Contribution>(a))?;
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(10)));
+    game.transact(|tx| tx.despawn(b))?;
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(0)));
+    game.transact(|tx| tx.put(a, Contribution(1)))?;
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(2)));
+    // Overflow inside the derived collection must roll back input and aggregate.
+    assert_eq!(
+        game.transact(|tx| tx.put(a, Contribution(i64::MAX))),
+        Err(Error::Overflow)
+    );
+    assert_eq!(game.get::<Contribution>(a), Some(Contribution(1)));
+    assert_eq!(game.get::<Weighted>(a), Some(Weighted(2)));
+    assert_eq!(game.get::<Total>(SUMMARY), Some(Total(2)));
+    Ok(())
+}
+
+#[test]
+fn self_aggregating_rule_rejects_dependency_cycle() -> Result<(), Error> {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct SelfAggregate(i64);
+    let mut game = Engine::new();
+    game.rule::<SelfAggregate>(|ctx, _key| {
+        let _ = ctx.all::<SelfAggregate>()?;
+        Ok(Some(SelfAggregate(1)))
+    })?;
+    assert_eq!(
+        game.transact(|tx| tx.spawn(Key::new(1, 1))),
+        Err(Error::RuleCycle)
+    );
+    Ok(())
+}

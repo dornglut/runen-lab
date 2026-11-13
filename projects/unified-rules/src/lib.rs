@@ -115,14 +115,21 @@ impl World {
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 struct Fact {
     ty: TypeId,
-    key: Key,
+    // None is the typed collection itself, not an entity (avoids fake sentinel keys).
+    key: Option<Key>,
 }
 impl Fact {
     fn of<T: 'static>(key: Key) -> Self {
-        Self {
-            ty: TypeId::of::<T>(),
-            key,
-        }
+        Self::keyed(TypeId::of::<T>(), key)
+    }
+    fn keyed(ty: TypeId, key: Key) -> Self {
+        Self { ty, key: Some(key) }
+    }
+    fn collection<T: 'static>() -> Self {
+        Self::collection_type(TypeId::of::<T>())
+    }
+    fn collection_type(ty: TypeId) -> Self {
+        Self { ty, key: None }
     }
 }
 struct Exists;
@@ -198,7 +205,8 @@ impl Transaction<'_> {
         self.changed.insert(Fact::of::<Exists>(key));
         for (&ty, col) in &mut self.world.columns {
             if col.erase(key) {
-                self.changed.insert(Fact { ty, key });
+                self.changed.insert(Fact::keyed(ty, key));
+                self.changed.insert(Fact::collection_type(ty));
             }
         }
         Ok(())
@@ -222,6 +230,7 @@ impl Transaction<'_> {
         }
         if self.world.set::<T>(key, value) {
             self.changed.insert(Fact::of::<T>(key));
+            self.changed.insert(Fact::collection::<T>());
         }
         Ok(())
     }
@@ -300,6 +309,26 @@ impl RuleCx<'_, '_> {
             self.evaluator.evaluate(Task { rule, key })?;
         }
         Ok(self.evaluator.world.get::<T>(key))
+    }
+
+    /// An ordered snapshot of every current value of a type, including rule-owned
+    /// derived values. The entire typed collection is tracked as a dependency:
+    /// insertions, retractions and changed members all invalidate this reader.
+    /// This first probe scans every live key and clones each present value.
+    pub fn all<T: Clone + Eq + 'static>(&mut self) -> Result<Vec<(Key, T)>, Error> {
+        let ty = TypeId::of::<T>();
+        self.reads.insert(Fact::collection::<T>());
+        let keys: Vec<_> = self.evaluator.world.live.values().copied().collect();
+        let mut result = Vec::new();
+        for key in keys {
+            if let Some(&rule) = self.evaluator.by_type.get(&ty) {
+                self.evaluator.evaluate(Task { rule, key })?;
+            }
+            if let Some(value) = self.evaluator.world.get::<T>(key) {
+                result.push((key, value));
+            }
+        }
+        Ok(result)
     }
 
     /// The previous committed value. This is a temporal edge, not a
@@ -533,6 +562,17 @@ impl Engine {
             .filter(|&key| !proposed.contains(key))
             .collect();
 
+        // New or removed keys can change every derived typed collection.
+        // This is deliberately broad: exact member-level incremental admission
+        // and selective aggregate invalidation are not established here.
+        if !removed_keys.is_empty()
+            || proposed.live.values().any(|&key| !self.world.contains(key))
+        {
+            for rule in &self.rules {
+                changes.insert(Fact::collection_type(rule.output));
+            }
+        }
+
         // The old dependency graph determines which tasks must be invalidated.
         // A derived output's invalidation is propagated transitively, before
         // evaluating any rule, even when its next value proves unchanged.
@@ -546,10 +586,9 @@ impl Engine {
             if let Some(dependents) = self.reverse.get(&fact) {
                 for &task in dependents {
                     if invalidated.insert(task) {
-                        queue.push_back(Fact {
-                            ty: self.rules[task.rule].output,
-                            key: task.key,
-                        });
+                        let output = self.rules[task.rule].output;
+                        queue.push_back(Fact::keyed(output, task.key));
+                        queue.push_back(Fact::collection_type(output));
                     }
                 }
             }
@@ -590,13 +629,9 @@ impl Engine {
                     .get(&rule.output)
                     .is_some_and(|column| column.contains(key))
                 {
-                    evaluator.output_changes.insert(
-                        Fact {
-                            ty: rule.output,
-                            key,
-                        },
-                        ChangeKind::Removed,
-                    );
+                    evaluator
+                        .output_changes
+                        .insert(Fact::keyed(rule.output, key), ChangeKind::Removed);
                 }
             }
         }

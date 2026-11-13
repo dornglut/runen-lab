@@ -25,6 +25,7 @@ The application defines only types and ordinary rule bodies; no domain-specific 
 
 - Per-key types are `Clone + Eq + 'static`. A rule's output type has one producer. Rules must register **before spawning entities**. Values are cloned on read; borrowed components, non-`'static` closures, non-`Eq` types and concurrent execution are not proven.
 - Rules can read other derived types via `ctx.get::<T>(key)`; dynamic read sets include absent lookups and `exists` checks. Recursive derived reads use per-key cycle detection and fail the whole staged transaction.
+- A trial `ctx.all::<T>()` reads a **typed collection snapshot**, ordered by generational key. The dependency graph now distinguishes a typed collection from an individual typed fact (no fake sentinel key). Source writes/removals and derived-task invalidations propagate collection invalidation, including membership changes on key creation/deletion. It scans and clones all live-key values, and a change to **one member** re-evaluates **every aggregate** observing that type; neither a selective index nor a scalable query plan is proven.
 - An in-memory single-writer transaction stages source edits, invalidates affected cached tasks **transitively** through previously observed dependencies, resolves derived dependencies on demand, and publishes coherent values on success. Failed edits or rule evaluation leave the previous world visible.
 - A no-op transaction performs no rule evaluations; typed output deltas are reset per successful transaction.
 - A rule may read its own **previous committed** output via `ctx.previous::<T>(key)` without creating a same-transaction recursive dependency. A clock is registered once through `engine.clock::<Step>(CLOCK, |s| s.epoch)`. Before any rule runs, admission rejects zero initial epochs, repeat-epoch value changes, regressing epochs and removal of an initialized clock; an identical clock write is a no-op. `ctx.advanced::<Step>(CLOCK)` provides only a newly admitted step and tracks its dependency. There is **no public `promote` method** and no authored epoch comparison. Initialization remains explicit in the rule; clocks are intentionally persistent for this bounded in-memory proof. The clock registration is an input contract, not a second system-execution API.
@@ -32,6 +33,28 @@ The application defines only types and ordinary rule bodies; no domain-specific 
 - The engine clones **the entire typed world** on every attempted transaction and reconstructs **the entire reverse dependency graph** after each successful one. Rule evaluations can be sparse, but the whole transaction is **not** O(changes). This is intentionally a semantics/API proof, **not** a million-entity performance implementation.
 - Source and output state share the same internal erased column store, with output writes denied to consumers. `previous` reads do not record a current-epoch invalidation edge. A later production design must assess stronger separation, lifetime/ownership constraints, deterministic temporal clock admission, and cycle diagnostics.
 - Event "contact" source is supplied by the consumer; geometric broadphase/narrowphase and actual effects are not modeled.
+
+## API alternatives under qualification
+
+| Candidate | Developer interface | Result / trade-off |
+| --- | --- | --- |
+| Application-side `engine.keys()` + `ctx.get::<T>(key)` loop | No runtime addition | **Rejected for reactive aggregation:** it cannot track future typed members and would require application-owned invalidation/scheduling. |
+| `ctx.all::<T>()` inside existing `engine.rule::<Out>(...)` | One rule API; typed value+membership observation | **Selected for a bounded executable proof:** no query DSL or domain-specific index; deliberately O(all keys) per read and broad collection invalidation. |
+| General tuple-query builder or procedural macro | Compact advanced queries | **Deferred:** join/filter semantics, access validation, borrowing and index ownership require separate evidence; syntax alone does not establish correctness. |
+
+Example of the experimental collection contract:
+
+```rust
+engine.rule::<TotalHealth>(|ctx, key| {
+    if key != ROOT { return Ok(None); }
+    let total = ctx.all::<Health>()?.into_iter().try_fold(0_i64, |acc, (_, hp)| {
+        acc.checked_add(hp.0).ok_or(Error::Overflow)
+    })?;
+    Ok(Some(TotalHealth(total)))
+})?;
+```
+
+This API direction is not a ratified public contract. It demonstrates a correctness-first collection read for independent consumers, not a replacement for a production query/aggregation system.
 
 ## Reproduce
 
@@ -48,7 +71,7 @@ The project CI workflow runs these steps at the exact PR head; the repository's 
 ## Required subsequent gates
 
 1. Independent admission/temporal oracles, negative compile cases, multi-clock and invalid/overflow/failure fault injection; distinguish source clock admission, dynamic read tracking and externally owned fixed-step progression.
-2. Deep/stack-safe dynamic hierarchies, aggregation and many-to-many rules; test several independently compiling consuming crates. Event delivery retention, effects and acknowledgment remain separate open contracts.
+2. Deep/stack-safe dynamic hierarchies, **selective and indexed** aggregation/many-to-many rules, and independent crates; test more than the collection-wide scan and broad invalidation candidate. Event delivery retention, effects and acknowledgment remain separate open contracts.
 3. Full 3D transforms, geometric collision generation, user-defined custom operations, non-`Eq`/borrowed values, external effects, parallelism and cancellation.
 4. Replace whole-world cloning/full dependency reindexing, then **fair** 1,024/65,536/1,000,000-entity Bevy/RunenECS comparisons using equivalent semantics.
 
