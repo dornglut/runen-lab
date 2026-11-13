@@ -120,15 +120,18 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
                     .is_some_and(|id| id.as_str() == "todo.add")
             })
             .unwrap();
-        assert!(field.bounds().x() + field.bounds().width() <= add.bounds().x());
         let field_mid = field.bounds().y() + field.bounds().height() / 2.0;
         let add_mid = add.bounds().y() + add.bounds().height() / 2.0;
+        let beside = field.bounds().x() + field.bounds().width() <= add.bounds().x()
+            && (field_mid - add_mid).abs() <= 1.0;
+        let stacked = field.bounds().y() + field.bounds().height() <= add.bounds().y();
         assert!(
-            (field_mid - add_mid).abs() <= 1.0,
-            "the placeholder field must be vertically centered with Add at width {surface_width}: field={:?}, add={:?}",
+            beside || stacked,
+            "composer must either align horizontally or wrap without overlap at width {surface_width}: field={:?}, add={:?}",
             field.bounds(),
             add.bounds()
         );
+        assert!(field.bounds().x() + field.bounds().width() <= surface_width);
         assert!(add.bounds().x() + add.bounds().width() <= surface_width);
         assert!(add.bounds().y() + add.bounds().height() <= 600.0);
         let heading = publication
@@ -143,6 +146,119 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
         assert!(heading.bounds().width() > 0.0 && heading.bounds().height() > 0.0);
         assert!(heading.bounds().x() >= 0.0 && heading.bounds().y() >= 0.0);
     }
+}
+
+#[test]
+fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-responsive-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "responsive test fixture must be isolated");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage).unwrap();
+    for number in 1..=6 {
+        service
+            .execute(TodoCommand::Add {
+                title: format!("Responsive task {number}"),
+            })
+            .unwrap();
+    }
+    for index in [0_usize, 1] {
+        let id = service.tasks()[index].id();
+        service
+            .execute(TodoCommand::SetCompleted {
+                id,
+                completed: true,
+            })
+            .unwrap();
+    }
+    let mut runtime = AppRuntime::<TodoUi>::mount(TodoUiState::new(service)).unwrap();
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+
+    for (width, height) in [
+        (240.0, 400.0),
+        (320.0, 568.0),
+        (390.0, 844.0),
+        (768.0, 1024.0),
+        (800.0, 600.0),
+        (1280.0, 800.0),
+        (1920.0, 1080.0),
+    ] {
+        let publication = runtime
+            .publish_surface(&SurfaceBuildContext::tight(
+                &style,
+                LogicalSize::try_new(width, height).unwrap(),
+            ))
+            .unwrap();
+        let frame = publication.frame();
+        let root = frame.root().expect("Todo root is published").bounds();
+        assert!(
+            root.width() > 0.0 && root.width() <= width
+                && (root.height() - height).abs() <= 1.0,
+            "root fills the available viewport height and respects its width: {width}x{height}, {root:?}"
+        );
+        let get = |id: &str| {
+            frame
+                .nodes()
+                .iter()
+                .find(|node| {
+                    node.authored_id()
+                        .is_some_and(|authored| authored.as_str() == id)
+                })
+                .unwrap_or_else(|| panic!("missing element {id} at {width}x{height}"))
+                .bounds()
+        };
+        for id in [
+            "todo.heading",
+            "todo.new-task",
+            "todo.add",
+            "todo.filter.all",
+            "todo.filter.active",
+            "todo.filter.completed",
+        ] {
+            let rect = get(id);
+            assert!(
+                rect.x() >= 0.0 && rect.width() > 0.0
+                    && rect.x() + rect.width() <= width + 1.0,
+                "control must remain reachable without horizontal clipping: {id} at {width}x{height}: {rect:?}"
+            );
+        }
+        let filters = [
+            get("todo.filter.all"),
+            get("todo.filter.active"),
+            get("todo.filter.completed"),
+        ];
+        for pair in filters.windows(2) {
+            let left = pair[0];
+            let right = pair[1];
+            assert!(
+                left.x() + left.width() <= right.x() + 1.0
+                    || left.y() + left.height() <= right.y() + 1.0,
+                "filters must wrap rather than overlap at {width}x{height}: {left:?} {right:?}"
+            );
+        }
+
+        let scroll = publication.layout_report().root().unwrap();
+        assert!(
+            (scroll.scroll_viewport_extent().height() - height).abs() <= 1.0,
+            "root scroll viewport tracks actual surface height at {width}x{height}"
+        );
+        if height <= 568.0 {
+            assert!(
+                scroll.scrollable_extent().height() > scroll.scroll_viewport_extent().height(),
+                "small window must expose reachable vertical overflow: {width}x{height}, scroll={scroll:?}"
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
