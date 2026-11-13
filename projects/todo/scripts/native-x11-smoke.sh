@@ -280,6 +280,54 @@ if ! close_todo after-empty; then
 fi
 
 
+# A fresh, isolated task title must submit through the original OS Enter
+# key, with exactly the typed value and no trailing whitespace/newline.
+# Keep the Add-button journey above as an independent native path.
+rm -f -- "$RUNEN_LAB_TODO_DATA_FILE"
+enter_matches() {
+  python3 - "$RUNEN_LAB_TODO_DATA_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    tasks = data["tasks"]
+    ok = (
+        data["version"] == 1
+        and data["next_id"] == 2
+        and len(tasks) == 1
+        and tasks[0] == {"id": 1, "title": "enter", "completed": False}
+    )
+except (OSError, ValueError, KeyError, TypeError):
+    ok = False
+sys.exit(0 if ok else 1)
+PY
+}
+start_todo
+xdotool mousemove --window "$window" "${target_x[field]}" "${target_y[field]}" click 1
+sleep 0.3
+assert_alive "enter-field-focus"
+xdotool type --clearmodifiers --delay 80 "enter"
+xdotool key --clearmodifiers Return
+for _ in $(seq 1 80); do
+  assert_alive "enter-submit-exited"
+  if enter_matches; then break; fi
+  sleep 0.2
+done
+enter_matches || fail "enter-did-not-submit-exact-task"
+echo "todo_native_x11=pass phase=single-line-enter-submits-no-whitespace"
+if ! close_todo after-enter; then
+  close_failures=$((close_failures + 1))
+fi
+
+start_todo
+enter_matches || fail "enter-restart-task-lost"
+echo "todo_native_x11=pass phase=enter-task-reloaded"
+if ! close_todo after-enter-restart; then
+  close_failures=$((close_failures + 1))
+fi
+
 # A second, isolated accepted storage fixture exercises both page actions
 # through original native pointer input. Verify task IDs, not just appearance,
 # so clicking the wrong page cannot produce a false positive.
@@ -357,54 +405,6 @@ start_todo
 bulk_matches "both" || fail "bulk-restart-state-lost"
 echo "todo_native_x11=pass phase=paged-changes-reloaded"
 if ! close_todo after-paged-restart; then
-  close_failures=$((close_failures + 1))
-fi
-
-# A fresh, isolated task title must submit through the original OS Enter
-# key, with exactly the typed value and no trailing whitespace/newline.
-# Keep the Add-button journey above as an independent native path.
-rm -f -- "$RUNEN_LAB_TODO_DATA_FILE"
-enter_matches() {
-  python3 - "$RUNEN_LAB_TODO_DATA_FILE" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-try:
-    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    tasks = data["tasks"]
-    ok = (
-        data["version"] == 1
-        and data["next_id"] == 2
-        and len(tasks) == 1
-        and tasks[0] == {"id": 1, "title": "enter", "completed": False}
-    )
-except (OSError, ValueError, KeyError, TypeError):
-    ok = False
-sys.exit(0 if ok else 1)
-PY
-}
-start_todo
-xdotool mousemove --window "$window" "${target_x[field]}" "${target_y[field]}" click 1
-sleep 0.3
-assert_alive "enter-field-focus"
-xdotool type --clearmodifiers --delay 80 "enter"
-xdotool key --clearmodifiers Return
-for _ in $(seq 1 80); do
-  assert_alive "enter-submit-exited"
-  if enter_matches; then break; fi
-  sleep 0.2
-done
-enter_matches || fail "enter-did-not-submit-exact-task"
-echo "todo_native_x11=pass phase=single-line-enter-submits-no-whitespace"
-if ! close_todo after-enter; then
-  close_failures=$((close_failures + 1))
-fi
-
-start_todo
-enter_matches || fail "enter-restart-task-lost"
-echo "todo_native_x11=pass phase=enter-task-reloaded"
-if ! close_todo after-enter-restart; then
   close_failures=$((close_failures + 1))
 fi
 
