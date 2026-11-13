@@ -7,8 +7,9 @@ mod layout_tests;
 use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
-    EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily, FontWeight,
-    GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutDimension, LayoutFactor, LayoutStyle,
+    EditIntent, EditResolution, Effects, Element, FlexContainerStyle, FlexDirection, FlexItemStyle,
+    FontFamily, FontWeight, GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutContainer,
+    LayoutDimension, LayoutFactor, LayoutStyle,
     LogicalLength, NoHostProtocol, ProducerBudget, SemanticEditableMode, TextAffinity,
     TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection,
     Typography, UiApp, UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column,
@@ -505,15 +506,19 @@ impl UiApp for TodoUi {
             );
         }
 
-        // Separate the header, composer, filters and task list clearly, while
-        // retaining the six-row default-viewport pagination budget.
+        // with_layout replaces the whole authored LayoutStyle. Preserve the
+        // vertical Flex container and its gap alongside width constraints.
+        // Otherwise a default Block container silently discards column spacing.
         column(content)
             .key("todo.root")
-            .gap(LogicalLength::from(theme::SPACE_5))
             .padding(theme::all(theme::SPACE_4))
             .background(theme::CANVAS)
             .with_layout(
                 LayoutStyle::default()
+                    .with_container(LayoutContainer::Flex(
+                        FlexContainerStyle::default().with_direction(FlexDirection::Column),
+                    ))
+                    .with_gap(LogicalLength::from(theme::SPACE_5))
                     .with_width(LayoutDimension::Fill)
                     .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
             )
