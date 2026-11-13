@@ -71,15 +71,71 @@ exist for this **exact** invoice/clock/transaction contract. Prior Lab #9
 join benchmarks do not measure either of these frontends. Numeric lines of
 code or microbenchmark rankings must not be invented.
 
+## C — typed computation scope (new kernel-level counterexample)
+
+Candidate C is **not** another wrapper around a user-visible summary record.
+It changes the experimental engine itself: a task/fact now has an explicit
+`Each<Key>` or `One` coordinate, and a keyless value has its **own storage
+and dependency identity**, distinct from a typed collection membership fact.
+A producer is addressed by **(Rust output type, output scope)**. Two
+computations may therefore produce `Temp` independently: one per record,
+one global; similarly, source values of the same type coexist in both shapes.
+
+The one experimental registration form is:
+
+```rust
+app.compute::<Each<LineTotal>>(|ctx, key| {
+    // ... derive a typed value for this key ...
+})?;
+app.compute::<One<InvoiceTotal>>(|ctx, ()| {
+    // ... aggregate cx.all::<LineTotal>()? ...
+})?;
+```
+
+The independently compiled `tests/scope_identity_candidate.rs` verifies
+collection→global→keyed dependencies, global→global dependencies, absence,
+retraction, deletion, read-only derived values, rollback on arithmetic
+overflow, cycles, no-op transactions and type identity not aliasing across
+scopes. An independently maintained map is the oracle for **96 rounds of
+keyed value edits, membership removal and generational identity reuse**;
+the two global results must match that reference after each mutation.
+
+**What it solves:** no fabricated user-level entity key is required for a
+global derived output; global state and per-record state really are
+different execution coordinates in the kernel. Existing 18 game/temporal/
+hierarchy consumers and earlier A/B tests remain unchanged.
+
+**What it does NOT solve:** the rule still exposes `RuleCx`; the developer
+must explicitly choose `Each<T>` or `One<T>`. Collection aggregation
+still scans/clones all values, staged transactions clone the whole world
+and rebuild the reverse graph, and the runtime is serial. A keyless rule
+cannot emit an occurrence because the old event identity requires a
+producing entity; the engine explicitly rejects this case rather than
+fabricating an origin. Time still uses the prior keyed clock contract, and
+effect requests and acknowledgments are unresolved. No performance,
+borrowed-data, concurrency or fully unified programming-model claim follows.
+
+**Compiler evidence:** the first method name `Engine::derive` shadowed
+candidate A's trait-provided `derive`, breaking six existing call sites.
+It was changed to `Engine::compute` and all existing consumers passed.
+This is a real Rust method-resolution ergonomics concern, not a runtime
+algorithm proof.
+
+**Disposition:** scoped computation identity is **PROMISING AS A RESEARCH
+PRIMITIVE**, but candidate C is not an accepted frontend or a universal API.
+RULE-07 remains **HOLD** until time, events and effects can fit one coherent
+contract and a fair Bevy comparison is compiled and benchmarked.
+
 ## Mandatory next API architecture gate
 
-The repeated fail point is **semantic output scope**: the existing kernel is
-per-key by construction, while one unified programming model must handle
-unkeyed globals, collections/relations, temporal state, occurrences and
-effects without magic identity values or per-kind application schedulers.
-Investigate whether a typed *computation identity* (including scope and
-temporal coordinate) can express them coherently, and whether a function-based
-or relational frontend compiles without ad hoc special cases. Test rustc
+Candidate C now establishes **keyed versus keyless computation identity** in
+one experimental evaluator; it does not establish collection-valued outputs,
+time coordinates, occurrences or effect requests in the same API. The next
+research question is whether a typed computation identity can include these
+remaining dimensions **without introducing multiple application-facing
+programming paradigms**. Compile-execute both function-first and relational
+frontends across the same non-game and movement/hierarchy/event consumers,
+including explicit external-effect semantics. Test rustc
 inference/diagnostics and complete consumer expressiveness before adding
 macros or redesigning the public framework.
 
