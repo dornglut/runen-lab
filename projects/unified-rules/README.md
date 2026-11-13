@@ -7,7 +7,7 @@ Experimental code for [Runen Lab #15](https://github.com/dornglut/runen-lab/issu
 A single, typed per-key rule contract in a standalone Rust project:
 
 ```rust
-engine.rule::<Derived, _>(|ctx, key| {
+engine.rule::<Derived>(|ctx, key| {
     let input = ctx.get::<Input>(key)?;
     Ok(input.map(|value| Derived::from(value)))
 })?;
@@ -19,7 +19,7 @@ The **same rule registration, resolver, typed store, dynamic dependency tracing,
 - ephemeral collision/contact-start **presence transitions**, exposed as newly inserted derived values for one successful transaction; and
 - a fourth unrelated health-to-death rule to challenge application-domain coupling.
 
-The application defines only types and ordinary rule bodies; no domain-specific reverse index or scheduler exists. Actual 3D rotation/scale, geometric collision detection, GPU/IO effects, persistent event queues and multiplayer are **not** included.
+The application defines only types and ordinary rule bodies; no domain-specific reverse index or scheduler exists. The independent consumer also checks dynamic dependency replacement, atomic rollback on derived overflow, and 128 rounds of changes against a separately calculated 128-node hierarchy reference. Actual 3D rotation/scale, geometric collision detection, GPU/IO effects, persistent event queues and multiplayer are **not** included.
 
 ## Semantic contract and limitations
 

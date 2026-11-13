@@ -268,10 +268,12 @@ impl Engine {
     }
     /// Register a typed, per-key computation. A given output type has one producer.
     /// This first candidate requires registration before the first spawned key.
-    pub fn rule<T, F>(&mut self, f: F) -> Result<(), Error>
+    pub fn rule<T>(
+        &mut self,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<Option<T>, Error> + 'static,
+    ) -> Result<(), Error>
     where
         T: Clone + Eq + 'static,
-        F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<Option<T>, Error> + 'static,
     {
         if !self.world.live.is_empty() {
             return Err(Error::LateRegistration);

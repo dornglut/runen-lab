@@ -30,7 +30,7 @@ fn new_game() -> Engine {
     // Rule 1: pure next-step state. Feedback becomes authoritative only via
     // the explicit epoch-boundary promote() operation, never same-epoch.
     engine
-        .rule::<NextPosition, _>(|ctx, entity| {
+        .rule::<NextPosition>(|ctx, entity| {
             let Some(Position(position)) = ctx.get::<Position>(entity)? else {
                 return Ok(None);
             };
@@ -50,7 +50,7 @@ fn new_game() -> Engine {
     // Rule 2: same registration path, dynamically keyed parent relation.
     // The runtime resolves parent->child dependency paths and detects cycles.
     engine
-        .rule::<WorldPosition, _>(|ctx, entity| {
+        .rule::<WorldPosition>(|ctx, entity| {
             let Some(Local(local)) = ctx.get::<Local>(entity)? else {
                 return Ok(None);
             };
@@ -72,7 +72,7 @@ fn new_game() -> Engine {
     // Rule 3: another output using exactly the same rule interface.
     // A presence transition None->Some is an observable one-epoch insertion.
     engine
-        .rule::<ContactStart, _>(|ctx, entity| {
+        .rule::<ContactStart>(|ctx, entity| {
             Ok(ctx
                 .get::<Contact>(entity)?
                 .and_then(|contact| contact.0.then_some(ContactStart)))
@@ -219,7 +219,7 @@ struct Dead;
 #[test]
 fn fourth_domain_requires_only_another_rule_and_source_type() -> Result<(), Error> {
     let mut game = new_game();
-    game.rule::<Dead, _>(|ctx, key| {
+    game.rule::<Dead>(|ctx, key| {
         Ok(ctx
             .get::<Health>(key)?
             .and_then(|hp| (hp.0 <= 0).then_some(Dead)))
@@ -264,7 +264,7 @@ fn invalid_writes_and_overflow_preserve_visible_world() -> Result<(), Error> {
         Err(Error::InvalidGeneration)
     );
     assert_eq!(
-        game.rule::<Dead, _>(|_, _| Ok(None)),
+        game.rule::<Dead>(|_, _| Ok(None)),
         Err(Error::LateRegistration)
     );
     Ok(())
