@@ -23,7 +23,7 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 // collection instead of reserving unbounded routed focus/output capacity.
 const TASKS_PER_PAGE: usize = 8;
 // Header, composer, section labels, root, empty/error state.
-const BASE_UI_NODES: usize = 13;
+const BASE_UI_NODES: usize = 14;
 const TASK_UI_NODES: usize = 4;
 const PAGE_UI_NODES: usize = 4;
 const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAGE_UI_NODES;

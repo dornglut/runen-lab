@@ -795,3 +795,67 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
     assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE + 1);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn native_smoke_click_targets() {
+    // Test-only click coordinates come from the real public RunenUI surface
+    // publication at the native app's default 800x600 viewport.
+    // The native smoke must still dispatch original XTEST OS pointer input.
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-native-targets-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "native target fixture must be isolated");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage).unwrap();
+    service
+        .execute(TodoCommand::Add {
+            title: "x11".into(),
+        })
+        .unwrap();
+    let state = TodoUiState::new(service);
+    let mut runtime = AppRuntime::<TodoUi>::mount(state).unwrap();
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .unwrap();
+    for (name, id) in [
+        ("field", "todo.new-task"),
+        ("add", "todo.add"),
+        ("toggle", "task.1.toggle"),
+    ] {
+        let rect = publication
+            .frame()
+            .nodes()
+            .iter()
+            .find(|node| {
+                node.authored_id()
+                    .is_some_and(|authored| authored.as_str() == id)
+            })
+            .unwrap_or_else(|| panic!("native click target missing: {id}"))
+            .bounds();
+        assert!(
+            rect.width() >= 12.0
+                && rect.height() >= 12.0
+                && rect.x() >= 0.0
+                && rect.y() >= 0.0
+                && rect.x() + rect.width() <= 800.0
+                && rect.y() + rect.height() <= 600.0,
+            "native click target outside viewport: {id} {rect:?}"
+        );
+        let x = (rect.x() + rect.width() / 2.0).round() as u32;
+        let y = (rect.y() + rect.height() / 2.0).round() as u32;
+        println!("TODO_NATIVE_TARGET {name} {x} {y}");
+    }
+    std::fs::remove_file(path).unwrap();
+}

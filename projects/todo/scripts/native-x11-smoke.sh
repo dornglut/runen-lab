@@ -162,22 +162,35 @@ close_todo() {
   stop_test_process
   return 1
 }
+# The geometry fixture uses the accepted public RunenUI surface publication;
+# it is not a replacement for the XTEST event sequence below.
+[[ -f "${TODO_NATIVE_TARGETS_FILE:-}" ]] || fail "native-geometry-missing"
+declare -A target_x target_y
+while read -r label name x y; do
+  [[ "$label" == "TODO_NATIVE_TARGET" && "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]] || fail "native-geometry-invalid"
+  target_x["$name"]="$x"
+  target_y["$name"]="$y"
+done < "$TODO_NATIVE_TARGETS_FILE"
+for name in field add toggle; do
+  [[ -n "${target_x[$name]:-}" && -n "${target_y[$name]:-}" ]] || fail "native-geometry-incomplete"
+  echo "todo_native_x11=target name=$name x=${target_x[$name]} y=${target_y[$name]}"
+done
+
 openbox --sm-disable >"$scratch/openbox.log" 2>&1 &
 wm_pid=$!
 sleep 1
 kill -0 "$wm_pid" 2>/dev/null || fail "window-manager-startup"
 
 start_todo
-# Coordinates are relative to the client window: the real published Todo
-# layout reserves a 240px-wide editable on the second logical row.
-xdotool mousemove --window "$window" 40 32 click 1
+# Coordinates are measured through the accepted RunenUI public publication
+# and matched against original native OS input on the exact same feature head.
+xdotool mousemove --window "$window" "${target_x[field]}" "${target_y[field]}" click 1
 sleep 0.5
 assert_alive "text-field-press"
 xdotool type --clearmodifiers --delay 80 "x11"
 sleep 1
 assert_alive "text-input"
-# The real Add button is immediately to the right of the 240px editable.
-xdotool mousemove --window "$window" 255 32 click 1
+xdotool mousemove --window "$window" "${target_x[add]}" "${target_y[add]}" click 1
 await_state "open" "add-button"
 echo "todo_native_x11=pass phase=create-input-and-persist"
 close_failures=0
@@ -192,11 +205,11 @@ start_todo
 assert_alive "restart"
 state_matches "open" || fail "restart-lost-task"
 echo "todo_native_x11=pass phase=restart-read-persisted"
-xdotool mousemove --window "$window" 40 32 click 1
+xdotool mousemove --window "$window" "${target_x[field]}" "${target_y[field]}" click 1
 sleep 0.5
 assert_alive "restored-field-click"
 echo "todo_native_x11=pass phase=restored-field-click"
-xdotool mousemove --window "$window" 38 54 click 1
+xdotool mousemove --window "$window" "${target_x[toggle]}" "${target_y[toggle]}" click 1
 await_state "complete" "complete-button"
 echo "todo_native_x11=pass phase=restored-task-completed"
 if ! close_todo after-complete; then
