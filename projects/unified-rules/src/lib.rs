@@ -482,15 +482,22 @@ impl Engine {
         result
     }
     /// Ordered occurrences from the last successful commit, including repeated
-    /// values and multiple events per key. A later successful commit clears them.
+    /// values and multiple producers per key. Ordinals are per (key, event type)
+    /// within this snapshot only; a later successful commit clears the snapshot.
     pub fn events<T: Clone + 'static>(&self) -> Vec<Occurrence<T>> {
+        let mut ordinals = HashMap::<Key, u32>::new();
         self.events
             .iter()
             .filter_map(|event| {
-                event.value.downcast_ref::<T>().map(|value| Occurrence {
-                    source: event.source.key,
-                    ordinal: event.ordinal,
-                    value: value.clone(),
+                event.value.downcast_ref::<T>().map(|value| {
+                    let ordinal = ordinals.entry(event.source.key).or_insert(0);
+                    let item = Occurrence {
+                        source: event.source.key,
+                        ordinal: *ordinal,
+                        value: value.clone(),
+                    };
+                    *ordinal = ordinal.checked_add(1).expect("event ordinal overflow");
+                    item
                 })
             })
             .collect()

@@ -712,3 +712,53 @@ fn clock_contract_requires_registration_and_cannot_be_registered_twice() -> Resu
     );
     Ok(())
 }
+
+#[test]
+fn multiple_rule_producers_have_unambiguous_per_key_event_ordinals() -> Result<(), Error> {
+    use unified_rules::Occurrence;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Trigger;
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct First;
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Second;
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct SharedEvent;
+
+    let mut game = Engine::new();
+    game.rule::<First>(|ctx, key| {
+        if ctx.get::<Trigger>(key)?.is_some() {
+            ctx.emit(SharedEvent)?;
+        }
+        Ok(None)
+    })?;
+    game.rule::<Second>(|ctx, key| {
+        if ctx.get::<Trigger>(key)?.is_some() {
+            ctx.emit(SharedEvent)?;
+        }
+        Ok(None)
+    })?;
+    let key = Key::new(7, 1);
+    game.transact(|tx| {
+        tx.spawn(key)?;
+        tx.put(key, Trigger)?;
+        Ok(())
+    })?;
+    assert_eq!(
+        game.events::<SharedEvent>(),
+        vec![
+            Occurrence {
+                source: key,
+                ordinal: 0,
+                value: SharedEvent,
+            },
+            Occurrence {
+                source: key,
+                ordinal: 1,
+                value: SharedEvent,
+            },
+        ]
+    );
+    Ok(())
+}
