@@ -13,7 +13,7 @@ use runenui_core::{
     NoHostProtocol, OverflowPolicy, OverflowStyle, ProducerBudget, SemanticEditableMode,
     TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition,
     TextSelection, Typography, UiApp, UpdateOutput, View, WorkResidencyBudget, WorkStartBudget,
-    button, column, row, text, text_field,
+    button, column, row, scroll_viewport, text, text_field,
 };
 
 pub use host::install;
@@ -25,8 +25,8 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 // collection instead of reserving unbounded routed focus/output capacity.
 // Five rows leave room for section gaps and paging at the default 800x600 size.
 const TASKS_PER_PAGE: usize = 5;
-// Header, composer, section labels, root, empty/error state.
-const BASE_UI_NODES: usize = 22;
+// Header, composer, section labels, root, scroll viewport, empty/error state.
+const BASE_UI_NODES: usize = 23;
 const TASK_UI_NODES: usize = 4;
 const PAGE_UI_NODES: usize = 4;
 const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAGE_UI_NODES;
@@ -534,10 +534,11 @@ impl UiApp for TodoUi {
             );
         }
 
-        // with_layout replaces the whole authored LayoutStyle. Preserve the
-        // vertical Flex container and its gap alongside width constraints.
-        // Otherwise a default Block container silently discards column spacing.
-        column(content)
+        // Use the public ScrollViewport widget as the hit-testable scroll
+        // owner. Merely applying overflow to a passive Group column exposes
+        // content extents but does not guarantee wheel input reaches an owner.
+        // with_layout replaces the entire style, including Flex/overflow.
+        let page = column(content)
             .key("todo.root")
             .padding(theme::all(theme::SPACE_4))
             .background(theme::CANVAS)
@@ -548,14 +549,25 @@ impl UiApp for TodoUi {
                     ))
                     .with_gap(LogicalLength::from(theme::SPACE_3))
                     .with_width(LayoutDimension::Fill)
-                    .with_height(LayoutDimension::Fill)
-                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16)))
-                    .with_overflow(OverflowStyle::new(
-                        OverflowPolicy::Clip,
-                        OverflowPolicy::Scroll,
-                    )),
+                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
             )
-            .foreground(theme::TEXT)
+            .foreground(theme::TEXT);
+        scroll_viewport(
+            page,
+            OverflowStyle::new(OverflowPolicy::Clip, OverflowPolicy::Scroll),
+        )
+        .id("todo.viewport")
+        .key("todo.viewport")
+        .with_layout(
+            LayoutStyle::default()
+                .with_width(LayoutDimension::Fill)
+                .with_height(LayoutDimension::Fill)
+                .with_overflow(OverflowStyle::new(
+                    OverflowPolicy::Clip,
+                    OverflowPolicy::Scroll,
+                )),
+        )
+        .background(theme::CANVAS)
     }
 
     fn update(
