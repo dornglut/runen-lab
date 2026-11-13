@@ -94,10 +94,18 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
             field.bounds().width() >= hint_width,
             "field must expose the entire initial placeholder, not clip it to an empty-source sliver"
         );
-        let runenui_core::SceneShape::Rect(clip) = hints[0].clips()[0].shape() else {
-            panic!("field placeholder must retain its rectangular viewport clip");
-        };
-        assert_eq!(clip.size(), field.bounds().size());
+        // The scrollable root contributes an outer viewport clip before the
+        // text-field clip. Check for the field clip without relying on ordering.
+        assert!(
+            hints[0].clips().iter().any(|clip| {
+                matches!(
+                    clip.shape(),
+                    runenui_core::SceneShape::Rect(rect)
+                        if rect.size() == field.bounds().size()
+                )
+            }),
+            "placeholder must remain clipped to the field even inside a scrollable root"
+        );
         let semantic_field = publication
             .semantic_publication()
             .snapshot()
