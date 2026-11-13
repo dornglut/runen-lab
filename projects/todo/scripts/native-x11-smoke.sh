@@ -210,6 +210,37 @@ wm_pid=$!
 sleep 1
 kill -0 "$wm_pid" 2>/dev/null || fail "window-manager-startup"
 
+# Test Remove on a pre-seeded, freshly launched *active* task before
+# any editable focus/typing or Complete->Reopen state transition. This isolates
+# the original OS pointer action from both editor and dynamic group movement.
+# The file uses the accepted Todo v1 schema, then normal TodoStorage reloads it.
+close_failures=0
+python3 - "$RUNEN_LAB_TODO_DATA_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    "version": 1,
+    "next_id": 2,
+    "tasks": [{"id": 1, "title": "x11", "completed": False}],
+}), encoding="utf-8")
+PY
+start_todo
+state_matches "open" || fail "cold-open-seeded-task-not-loaded"
+xdotool mousemove --window "$window" "${target_x[remove]}" "${target_y[remove]}" click 1
+await_state "empty" "cold-open-remove"
+echo "todo_native_x11=pass phase=cold-open-remove-persisted"
+if ! close_todo after-cold-remove; then
+  close_failures=$((close_failures + 1))
+fi
+start_todo
+state_matches "empty" || fail "cold-open-remove-restart-task-reappeared"
+echo "todo_native_x11=pass phase=cold-open-remove-reloaded"
+if ! close_todo after-cold-remove-restart; then
+  close_failures=$((close_failures + 1))
+fi
+rm -f -- "$RUNEN_LAB_TODO_DATA_FILE"
+
 # Run native Enter first so a separate later task transition failure cannot
 # hide the original keyboard/submit/persistence acceptance result.
 # A fresh, isolated task title must submit through the original OS Enter
@@ -277,7 +308,6 @@ echo "todo_native_x11=diagnostic before-add-focus=$(xdotool getwindowfocus 2>/de
 xdotool mousemove --window "$window" "${target_x[add]}" "${target_y[add]}" click 1
 await_state "open" "add-button"
 echo "todo_native_x11=pass phase=create-input-and-persist"
-close_failures=0
 if ! close_todo after-edit; then
   close_failures=$((close_failures + 1))
 fi
