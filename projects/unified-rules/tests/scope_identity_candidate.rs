@@ -4,7 +4,10 @@
 use unified_rules::{Each, Engine, Error, Key, One, SingletonChange};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Line { price: i64, qty: i64 }
+struct Line {
+    price: i64,
+    qty: i64,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LineTotal(i64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,10 +40,12 @@ fn invoice() -> Result<Engine, Error> {
             .transpose()
     })?;
     engine.derive::<One<InvoiceTotal>>(|cx, ()| {
-        let sum = cx.all::<LineTotal>()?.into_iter().try_fold(
-            0_i64,
-            |total, (_, line)| total.checked_add(line.0).ok_or(Error::Overflow),
-        )?;
+        let sum = cx
+            .all::<LineTotal>()?
+            .into_iter()
+            .try_fold(0_i64, |total, (_, line)| {
+                total.checked_add(line.0).ok_or(Error::Overflow)
+            })?;
         Ok(Some(InvoiceTotal(sum)))
     })?;
     engine.derive::<One<OverLimit>>(|cx, ()| {
@@ -110,7 +115,13 @@ fn cross_scope_dependencies_and_atomic_rollback() -> Result<(), Error> {
         Err(Error::DerivedIsReadOnly)
     );
     assert_eq!(
-        app.transact(|tx| tx.put(FIRST, Line { price: i64::MAX, qty: 2 })),
+        app.transact(|tx| tx.put(
+            FIRST,
+            Line {
+                price: i64::MAX,
+                qty: 2
+            }
+        )),
         Err(Error::Overflow)
     );
     assert_eq!(app.singleton::<InvoiceTotal>(), Some(InvoiceTotal(45)));
@@ -136,19 +147,18 @@ fn missing_keyless_input_retracts_global_and_keyed_outputs() -> Result<(), Error
     assert_eq!(app.singleton::<InvoiceTotal>(), Some(InvoiceTotal(10)));
     assert_eq!(app.singleton::<OverLimit>(), None);
     assert_eq!(app.get::<GlobalFlag>(FIRST), None);
-    assert_eq!(app.singleton_change::<OverLimit>(), Some(SingletonChange::Removed));
+    assert_eq!(
+        app.singleton_change::<OverLimit>(),
+        Some(SingletonChange::Removed)
+    );
     Ok(())
 }
 
 #[test]
 fn cross_scope_self_cycle_rejects_initial_commit() -> Result<(), Error> {
     let mut app = Engine::new();
-    app.derive::<One<Temp>>(|cx, ()| {
-        Ok(cx.singleton::<Link>()?.map(|value| Temp(value.0)))
-    })?;
-    app.derive::<One<Link>>(|cx, ()| {
-        Ok(cx.singleton::<Temp>()?.map(|value| Link(value.0)))
-    })?;
+    app.derive::<One<Temp>>(|cx, ()| Ok(cx.singleton::<Link>()?.map(|value| Temp(value.0))))?;
+    app.derive::<One<Link>>(|cx, ()| Ok(cx.singleton::<Temp>()?.map(|value| Link(value.0))))?;
     assert_eq!(app.transact(|_| Ok(())), Err(Error::RuleCycle));
     assert_eq!(app.singleton::<Temp>(), None);
     assert_eq!(app.singleton::<Link>(), None);
@@ -162,7 +172,10 @@ fn global_occurrences_cannot_claim_a_fictitious_entity_origin() -> Result<(), Er
         cx.emit(Pulse(1))?;
         Ok(Some(Temp(1)))
     })?;
-    assert_eq!(app.transact(|_| Ok(())), Err(Error::GlobalOccurrenceUnsupported));
+    assert_eq!(
+        app.transact(|_| Ok(())),
+        Err(Error::GlobalOccurrenceUnsupported)
+    );
     assert_eq!(app.singleton::<Temp>(), None);
     assert!(app.events::<Pulse>().is_empty());
     Ok(())

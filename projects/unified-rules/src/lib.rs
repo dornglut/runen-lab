@@ -65,7 +65,6 @@ impl<T: Clone + Eq + 'static> Column for Values<T> {
     }
 }
 
-
 // Keyless values have their own typed storage: they are not disguised rows.
 trait SingletonColumn {
     fn clone_box(&self) -> Box<dyn SingletonColumn>;
@@ -175,19 +174,28 @@ impl Fact {
         Self::keyed(TypeId::of::<T>(), key)
     }
     fn keyed(ty: TypeId, key: Key) -> Self {
-        Self { ty, scope: FactScope::Key(key) }
+        Self {
+            ty,
+            scope: FactScope::Key(key),
+        }
     }
     fn collection<T: 'static>() -> Self {
         Self::collection_type(TypeId::of::<T>())
     }
     fn collection_type(ty: TypeId) -> Self {
-        Self { ty, scope: FactScope::Collection }
+        Self {
+            ty,
+            scope: FactScope::Collection,
+        }
     }
     fn singleton<T: 'static>() -> Self {
         Self::singleton_type(TypeId::of::<T>())
     }
     fn singleton_type(ty: TypeId) -> Self {
-        Self { ty, scope: FactScope::Singleton }
+        Self {
+            ty,
+            scope: FactScope::Singleton,
+        }
     }
 }
 struct Exists;
@@ -332,10 +340,16 @@ struct Task {
 }
 impl Task {
     fn key(rule: usize, key: Key) -> Self {
-        Self { rule, at: TaskAt::Key(key) }
+        Self {
+            rule,
+            at: TaskAt::Key(key),
+        }
     }
     fn singleton(rule: usize) -> Self {
-        Self { rule, at: TaskAt::Singleton }
+        Self {
+            rule,
+            at: TaskAt::Singleton,
+        }
     }
 }
 type RuleFn = dyn for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, TaskAt) -> Result<(), Error>;
@@ -357,7 +371,7 @@ pub trait OutputShape {
     fn install(
         engine: &mut Engine,
         f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Self::At) -> Result<Option<Self::Value>, Error>
-            + 'static,
+        + 'static,
     ) -> Result<(), Error>;
 }
 impl<T: Clone + Eq + 'static> OutputShape for Each<T> {
@@ -562,18 +576,14 @@ impl Engine {
     /// Single registration form with an explicit typed output scope.
     pub fn derive<S: OutputShape>(
         &mut self,
-        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, S::At)
-                -> Result<Option<S::Value>, Error>
-            + 'static,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, S::At) -> Result<Option<S::Value>, Error> + 'static,
     ) -> Result<(), Error> {
         S::install(self, f)
     }
 
     fn singleton_rule<T: Clone + Eq + 'static>(
         &mut self,
-        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>)
-            -> Result<Option<T>, Error>
-            + 'static,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>) -> Result<Option<T>, Error> + 'static,
     ) -> Result<(), Error> {
         if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
             return Err(Error::LateRegistration);
@@ -715,11 +725,9 @@ impl Engine {
             .insertions
             .iter()
             .filter(|fact| fact.ty == TypeId::of::<T>())
-            .filter_map(|fact| {
-                match fact.scope {
-                    FactScope::Key(key) => self.get::<T>(key).map(|value| (key, value)),
-                    FactScope::Collection | FactScope::Singleton => None,
-                }
+            .filter_map(|fact| match fact.scope {
+                FactScope::Key(key) => self.get::<T>(key).map(|value| (key, value)),
+                FactScope::Collection | FactScope::Singleton => None,
             })
             .collect();
         items.sort_by_key(|(key, _)| *key);
