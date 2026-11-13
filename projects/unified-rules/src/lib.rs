@@ -248,7 +248,7 @@ struct ClockSpec {
 pub struct Transaction<'a> {
     world: &'a mut World,
     changed: &'a mut HashSet<Fact>,
-    outputs: &'a HashMap<TypeId, usize>,
+    outputs: &'a HashMap<(TypeId, ProducerScope), usize>,
 }
 impl Transaction<'_> {
     pub fn spawn(&mut self, key: Key) -> Result<(), Error> {
@@ -295,7 +295,7 @@ impl Transaction<'_> {
         &mut self,
         value: Option<T>,
     ) -> Result<(), Error> {
-        if self.outputs.contains_key(&TypeId::of::<T>()) {
+        if self.outputs.contains_key(&(TypeId::of::<T>(), ProducerScope::One)) {
             return Err(Error::DerivedIsReadOnly);
         }
         if self.world.set_singleton(value) {
@@ -317,7 +317,7 @@ impl Transaction<'_> {
         if !self.world.contains(key) {
             return Err(Error::MissingEntity);
         }
-        if self.outputs.contains_key(&TypeId::of::<T>()) {
+        if self.outputs.contains_key(&(TypeId::of::<T>(), ProducerScope::Each)) {
             return Err(Error::DerivedIsReadOnly);
         }
         if self.world.set::<T>(key, value) {
@@ -326,6 +326,14 @@ impl Transaction<'_> {
         }
         Ok(())
     }
+}
+
+// A producer is identified by output type *and* output scope.
+// This permits both a keyed and keyless computation of the same Rust type.
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+enum ProducerScope {
+    Each,
+    One,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -399,7 +407,7 @@ struct Evaluator<'r> {
     world: World,
     previous: &'r World,
     rules: &'r [Rule],
-    by_type: &'r HashMap<TypeId, usize>,
+    by_type: &'r HashMap<(TypeId, ProducerScope), usize>,
     clocks: &'r [ClockSpec],
     events: Vec<StagedEvent>,
     invalidated: BTreeSet<Task>,
@@ -453,7 +461,7 @@ impl RuleCx<'_, '_> {
     pub fn get<T: Clone + Eq + 'static>(&mut self, key: Key) -> Result<Option<T>, Error> {
         let fact = Fact::of::<T>(key);
         self.reads.insert(fact);
-        if let Some(&rule) = self.evaluator.by_type.get(&fact.ty) {
+        if let Some(&rule) = self.evaluator.by_type.get(&(fact.ty, ProducerScope::Each)) {
             if self.evaluator.rules[rule].singleton {
                 return Err(Error::ScopeMismatch);
             }
@@ -466,7 +474,7 @@ impl RuleCx<'_, '_> {
     pub fn singleton<T: Clone + Eq + 'static>(&mut self) -> Result<Option<T>, Error> {
         let fact = Fact::singleton::<T>();
         self.reads.insert(fact);
-        if let Some(&rule) = self.evaluator.by_type.get(&fact.ty) {
+        if let Some(&rule) = self.evaluator.by_type.get(&(fact.ty, ProducerScope::One)) {
             if !self.evaluator.rules[rule].singleton {
                 return Err(Error::ScopeMismatch);
             }
@@ -490,7 +498,7 @@ impl RuleCx<'_, '_> {
         let keys: Vec<_> = self.evaluator.world.live.values().copied().collect();
         let mut result = Vec::new();
         for key in keys {
-            if let Some(&rule) = self.evaluator.by_type.get(&ty) {
+            if let Some(&rule) = self.evaluator.by_type.get(&(ty, ProducerScope::Each)) {
                 if self.evaluator.rules[rule].singleton {
                     return Err(Error::ScopeMismatch);
                 }
@@ -557,7 +565,7 @@ impl RuleCx<'_, '_> {
 pub struct Engine {
     world: World,
     rules: Vec<Rule>,
-    by_type: HashMap<TypeId, usize>,
+    by_type: HashMap<(TypeId, ProducerScope), usize>,
     clocks: Vec<ClockSpec>,
     events: Vec<StagedEvent>,
     dependencies: HashMap<Task, HashSet<Fact>>,
@@ -589,7 +597,7 @@ impl Engine {
             return Err(Error::LateRegistration);
         }
         let ty = TypeId::of::<T>();
-        if self.by_type.contains_key(&ty) {
+        if self.by_type.contains_key(&(ty, ProducerScope::One)) {
             return Err(Error::DuplicateProducer);
         }
         let callback = move |cx: &mut RuleCx<'_, '_>, at: TaskAt| {
@@ -611,7 +619,7 @@ impl Engine {
             cx.evaluator.world.set_singleton::<T>(value);
             Ok(())
         };
-        self.by_type.insert(ty, self.rules.len());
+        self.by_type.insert((ty, ProducerScope::One), self.rules.len());
         self.rules.push(Rule {
             output: ty,
             singleton: true,
@@ -680,7 +688,7 @@ impl Engine {
             return Err(Error::LateRegistration);
         }
         let ty = TypeId::of::<T>();
-        if self.by_type.contains_key(&ty) {
+        if self.by_type.contains_key(&(ty, ProducerScope::Each)) {
             return Err(Error::DuplicateProducer);
         }
         let callback = move |ctx: &mut RuleCx<'_, '_>, at: TaskAt| {
@@ -705,7 +713,7 @@ impl Engine {
             ctx.evaluator.world.set::<T>(key, value);
             Ok(())
         };
-        self.by_type.insert(ty, self.rules.len());
+        self.by_type.insert((ty, ProducerScope::Each), self.rules.len());
         self.rules.push(Rule {
             output: ty,
             singleton: false,

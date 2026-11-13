@@ -108,6 +108,11 @@ app.compute::<One<InvoiceTotal>>(|ctx, ()| {
 
 - A keyless source can be set/retracted through a transaction, and typed
   `ctx.singleton::<T>()` tracks it, including derived singletons.
+- Output producer identity is `(Rust output type, output scope)`, so the same
+  type can have separate `Each<T>` and `One<T>` producers; input source values
+  of the same type in both scopes likewise do not alias. The new independent
+  96-step oracle changes memberships, generations and values while comparing
+  both singleton reductions against an independently maintained map.
 - Collection→global→keyed invalidation and keyless derived-on-derived
   dependencies use the **same** existing evaluator, transaction, reverse graph
   and rollback. No fabricated entity key is inserted into the world.

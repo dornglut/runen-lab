@@ -180,3 +180,124 @@ fn global_occurrences_cannot_claim_a_fictitious_entity_origin() -> Result<(), Er
     assert!(app.events::<Pulse>().is_empty());
     Ok(())
 }
+
+
+#[test]
+fn same_rust_type_has_independent_keyed_and_global_output_producers() -> Result<(), Error> {
+    let mut app = Engine::new();
+    app.compute::<Each<Temp>>(|cx, key| {
+        Ok(cx.get::<Line>(key)?.map(|line| Temp(line.qty)))
+    })?;
+    app.compute::<One<Temp>>(|cx, ()| {
+        let mut sum = 0_i64;
+        for (_, Temp(qty)) in cx.all::<Temp>()? {
+            sum = sum.checked_add(qty).ok_or(Error::Overflow)?;
+        }
+        Ok(Some(Temp(sum)))
+    })?;
+    app.transact(|tx| {
+        tx.spawn(FIRST)?;
+        tx.spawn(SECOND)?;
+        tx.put(FIRST, Line { price: 9, qty: 2 })?;
+        tx.put(SECOND, Line { price: 4, qty: 3 })?;
+        Ok(())
+    })?;
+    assert_eq!(app.get::<Temp>(FIRST), Some(Temp(2)));
+    assert_eq!(app.get::<Temp>(SECOND), Some(Temp(3)));
+    assert_eq!(app.singleton::<Temp>(), Some(Temp(5)));
+    assert_eq!(
+        app.transact(|tx| tx.put(FIRST, Temp(300))),
+        Err(Error::DerivedIsReadOnly)
+    );
+    assert_eq!(
+        app.transact(|tx| tx.put_singleton(Temp(300))),
+        Err(Error::DerivedIsReadOnly)
+    );
+    app.transact(|tx| tx.remove::<Line>(FIRST))?;
+    assert_eq!(app.get::<Temp>(FIRST), None);
+    assert_eq!(app.singleton::<Temp>(), Some(Temp(3)));
+    Ok(())
+}
+
+#[test]
+fn same_input_type_in_two_scopes_is_not_aliased() -> Result<(), Error> {
+    let mut app = Engine::new();
+    app.transact(|tx| {
+        tx.spawn(FIRST)?;
+        tx.put(FIRST, Temp(2))?;
+        tx.put_singleton(Temp(99))?;
+        Ok(())
+    })?;
+    assert_eq!(app.keys(), vec![FIRST]);
+    assert_eq!(app.get::<Temp>(FIRST), Some(Temp(2)));
+    assert_eq!(app.singleton::<Temp>(), Some(Temp(99)));
+    app.transact(|tx| tx.remove_singleton::<Temp>())?;
+    assert_eq!(app.get::<Temp>(FIRST), Some(Temp(2)));
+    assert_eq!(app.singleton::<Temp>(), None);
+    Ok(())
+}
+
+#[test]
+fn global_sum_matches_independent_mutation_oracle() -> Result<(), Error> {
+    use std::collections::BTreeMap;
+
+    let mut app = invoice()?;
+    let mut generations = [1_u32; 24];
+    let mut independent = BTreeMap::<Key, Line>::new();
+    app.transact(|tx| {
+        tx.put_singleton(UpperLimit(200))?;
+        for slot in 0..24 {
+            let key = Key::new(slot, 1);
+            tx.spawn(key)?;
+            let line = Line {
+                price: i64::from(slot + 1),
+                qty: i64::from((slot % 5) + 1),
+            };
+            tx.put(key, line)?;
+            independent.insert(key, line);
+        }
+        Ok(())
+    })?;
+    for step in 0_u32..96 {
+        let slot = step as usize % generations.len();
+        let old_key = Key::new(slot as u32, generations[slot]);
+        if step % 7 == 0 {
+            let next = generations[slot] + 1;
+            let new_key = Key::new(slot as u32, next);
+            let line = Line {
+                price: i64::from((step % 17) + 1),
+                qty: i64::from((step % 7) + 1),
+            };
+            app.transact(|tx| {
+                tx.despawn(old_key)?;
+                tx.spawn(new_key)?;
+                tx.put(new_key, line)
+            })?;
+            independent.remove(&old_key);
+            independent.insert(new_key, line);
+            generations[slot] = next;
+        } else if step % 11 == 0 {
+            app.transact(|tx| tx.remove::<Line>(old_key))?;
+            independent.remove(&old_key);
+        } else {
+            let line = Line {
+                price: i64::from((step % 29) + 1),
+                qty: i64::from((step % 13) + 1),
+            };
+            app.transact(|tx| tx.put(old_key, line))?;
+            independent.insert(old_key, line);
+        }
+        let expected: i64 = independent.values().map(|line| line.price * line.qty).sum();
+        assert_eq!(
+            app.singleton::<InvoiceTotal>(),
+            Some(InvoiceTotal(expected)),
+            "oracle failed after step {step}"
+        );
+        assert_eq!(
+            app.singleton::<OverLimit>(),
+            Some(OverLimit(expected > 200)),
+            "derived singleton failed after step {step}"
+        );
+    }
+    Ok(())
+}
