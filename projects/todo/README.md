@@ -24,9 +24,12 @@ and unit tests alone do **not** establish that the GUI works.
 
 ## Task interactions
 
-Enter a title and press Enter or select **Add**. Each task has a **Complete** / **Reopen**
-control and **Remove**. Changes are validated and saved before the in-memory task state is
-committed. Task-operation and persistence errors appear in the UI instead of silently erasing saved state.
+Enter a task title and press **Enter** or select **Add task**. The title is a
+single-line field: Enter submits the task and does not insert a space or newline.
+Descriptions are not implemented; if added later, they belong in a separate
+multiline field where Enter creates a newline and a separate Save action commits.
+Each task has **Complete** / **Reopen** and **Remove**. Changes are validated
+and saved before in-memory task state is committed. Task-operation and persistence errors appear in the UI instead of silently erasing saved state.
 Out-of-range or invalid text-edit proposals are rejected by the editor contract and logged
 to stderr as `todo.editor` diagnostics, without being represented as storage errors.
 Capture diagnostics from a terminal when reporting input trouble; they do not
@@ -36,11 +39,21 @@ accepted edit revision/byte counts and Add dispatch/persistence outcomes without
 logging entered text. On PowerShell, redirect the console through
 `Tee-Object -FilePath` to copy the evidence.
 
-The UI displays at most **8 task rows per page**, with Previous/Next navigation
-when more tasks exist. This bounds the mounted RunenUI tree and routed input budget
-independently of the model's 10,000-task storage limit. Navigating pages does not
-modify the saved tasks; adding a task selects its page, and removal clamps the
-current page if necessary. All task IDs and persistence remain application-owned.
+The Todo-local dark design palette, spacing scale and renderer clear are centralized
+in `src/ui/theme.rs`. The accepted RunenUI has `StyleTheme` and typed tokens,
+but the current accepted Engine native mount does not expose an application theme
+parameter; production UI authors explicit locally centralized values. The window
+clear is specified in linear sRGB coordinates to match its authored canvas color.
+
+The views **All**, **Active**, and **Completed** are application-local, with counts.
+All groups active tasks ahead of completed tasks, separated by a heading;
+each filter has its own page index reset. Filtering never mutates saved data.
+Completing a task in Active immediately hides it there; Reopen in Completed
+moves it back to Active. Adding from Completed switches to Active.
+The UI displays at most **8 task rows per filtered page**, with Previous/Next
+navigation when more tasks exist. This bounds the mounted RunenUI tree independently
+of the model's 10,000-task storage limit. All task IDs and persistence remain
+application-owned.
 This is ordinary Todo-local pagination, **not** a virtualized RunenUI framework API.
 
 Task data is written to a per-user location:
@@ -58,11 +71,13 @@ application owner, not independently modify its backing file.
 
 ## Desktop presentation
 
-The interface uses RunenUI's public layout and style primitives: a visual heading,
-open/completed counts, a bounded editable composer, readable task cards and
-state-specific actions. No separate UI toolkit or framework fork is involved.
-Eight rows per page keep controls within the normal 800×600 desktop viewport;
-the full task collection remains in durable storage.
+The interface uses RunenUI's public layout and style primitives, with
+an application-owned, accessible-contrast ink/slate palette and mint primary
+action accent. A consistent 4/8/12/16 spacing scale separates the heading,
+composer, filter controls, list cards, and pagination. Eight task rows per
+filtered page bound work; long labels, physical font variations, and window
+resizing still require native visual verification. No separate UI toolkit
+or framework fork is involved.
 
 ## Terminal-only development workflow
 

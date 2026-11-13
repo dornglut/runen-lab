@@ -1,4 +1,5 @@
 mod host;
+pub(crate) mod theme;
 
 #[cfg(test)]
 mod layout_tests;
@@ -6,7 +7,7 @@ mod layout_tests;
 use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
-    Color, EdgeInsets, EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily,
+    EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily,
     FontWeight, GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutDimension, LayoutFactor,
     LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, Radius, SemanticEditableMode,
     TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition,
@@ -23,14 +24,14 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 // collection instead of reserving unbounded routed focus/output capacity.
 const TASKS_PER_PAGE: usize = 8;
 // Header, composer, section labels, root, empty/error state.
-const BASE_UI_NODES: usize = 14;
+const BASE_UI_NODES: usize = 22;
 const TASK_UI_NODES: usize = 4;
 const PAGE_UI_NODES: usize = 4;
 const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAGE_UI_NODES;
 // The maximum page exposes a text field, Add, two actions per task and two
 // paging actions. Focus transfer can route each event-bearing widget four
 // times; ordinary routing and framework defaults require additional headroom.
-const MAX_INTERACTION_OUTPUTS: usize = 4 * (4 + 2 * TASKS_PER_PAGE) + 4;
+const MAX_INTERACTION_OUTPUTS: usize = 4 * (7 + 2 * TASKS_PER_PAGE) + 4;
 
 fn ui_font(size: u16, bold: bool) -> Typography {
     let typography = Typography::new(
@@ -50,11 +51,19 @@ fn diagnostics_enabled() -> bool {
     std::env::var_os("RUNEN_LAB_TODO_DIAGNOSTICS").is_some()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaskFilter {
+    All,
+    Active,
+    Completed,
+}
+
 pub struct TodoUi;
 
 pub struct TodoUiState {
     service: TodoService,
     page_index: usize,
+    filter: TaskFilter,
     draft: String,
     draft_revision: u64,
     draft_selection: usize,
@@ -70,6 +79,7 @@ impl TodoUiState {
         Self {
             service,
             page_index: 0,
+            filter: TaskFilter::All,
             draft: String::new(),
             draft_revision: 0,
             draft_selection: 0,
@@ -77,18 +87,40 @@ impl TodoUiState {
         }
     }
 
-    fn page_count(&self) -> usize {
-        self.service.tasks().len().div_ceil(TASKS_PER_PAGE).max(1)
+    fn filtered_count(&self) -> usize {
+        self.service
+            .tasks()
+            .iter()
+            .filter(|task| match self.filter {
+                TaskFilter::All => true,
+                TaskFilter::Active => !task.completed(),
+                TaskFilter::Completed => task.completed(),
+            })
+            .count()
     }
 
-    fn visible_tasks(&self) -> &[Task] {
+    fn page_count(&self) -> usize {
+        self.filtered_count().div_ceil(TASKS_PER_PAGE).max(1)
+    }
+
+    fn visible_tasks(&self) -> Vec<&Task> {
         let tasks = self.service.tasks();
+        // All groups unfinished tasks before completed tasks, without
+        // changing original task IDs, order within a group, or storage.
+        let ordered: Vec<&Task> = match self.filter {
+            TaskFilter::All => tasks
+                .iter()
+                .filter(|task| !task.completed())
+                .chain(tasks.iter().filter(|task| task.completed()))
+                .collect(),
+            TaskFilter::Active => tasks.iter().filter(|task| !task.completed()).collect(),
+            TaskFilter::Completed => tasks.iter().filter(|task| task.completed()).collect(),
+        };
         let start = self
             .page_index
             .saturating_mul(TASKS_PER_PAGE)
-            .min(tasks.len());
-        let end = start.saturating_add(TASKS_PER_PAGE).min(tasks.len());
-        &tasks[start..end]
+            .min(ordered.len());
+        ordered.into_iter().skip(start).take(TASKS_PER_PAGE).collect()
     }
 
     fn draft_snapshot(&self) -> TextDocumentSnapshot {
@@ -115,6 +147,7 @@ impl TodoUiState {
 pub enum TodoAction {
     EditDraft(Box<EditIntent>),
     AddTask,
+    SetFilter(TaskFilter),
     PreviousPage,
     NextPage,
     SetCompleted { id: TaskId, completed: bool },
@@ -173,24 +206,24 @@ impl UiApp for TodoUi {
         let open = tasks.len() - completed;
         let mut content: Vec<Element<TodoAction>> = vec![
             column([
-                text("RUNEN LAB  /  DESKTOP")
-                    .foreground(Color::rgb(108, 133, 157))
-                    .typography(ui_font(11, false))
+                text("RUNEN LAB  /  TODO")
+                    .foreground(theme::MUTED)
+                    .typography(ui_font(11, true))
                     .key("todo.eyebrow")
                     .into_element(),
                 text("Your tasks")
                     .id("todo.heading")
-                    .foreground(Color::rgb(242, 246, 251))
-                    .typography(ui_font(30, true))
+                    .foreground(theme::TEXT)
+                    .typography(ui_font(27, true))
                     .key("todo.heading")
                     .into_element(),
-                text(format!("{open} open  /  {completed} completed"))
-                    .foreground(Color::rgb(158, 176, 192))
+                text(format!("{open} to do  /  {completed} completed"))
+                    .foreground(theme::SECONDARY_TEXT)
                     .typography(ui_font(13, false))
                     .key("todo.summary")
                     .into_element(),
             ])
-            .gap(LogicalLength::from(3_u16))
+            .gap(LogicalLength::from(theme::SPACE_1))
             .key("todo.header")
             .into_element(),
             row([
@@ -202,6 +235,7 @@ impl UiApp for TodoUi {
                     |intent| TodoAction::EditDraft(Box::new(intent)),
                 )
                 .expect("Todo draft is always normalized single-line text")
+                .on_submit(|| TodoAction::AddTask)
                 .id("todo.new-task")
                 .key("todo.new-task")
                 .with_layout(
@@ -211,108 +245,180 @@ impl UiApp for TodoUi {
                         .with_flex_item(FlexItemStyle::default().with_grow(LayoutFactor::ONE)),
                 )
                 .placeholder("What needs doing?")
-                .background(Color::rgb(34, 46, 64))
-                .foreground(Color::rgb(242, 246, 251))
-                .padding(EdgeInsets::symmetric(
-                    LogicalLength::from(11_u16),
-                    LogicalLength::from(9_u16),
-                ))
-                .radius(Radius::all(LogicalLength::from(8_u16)))
+                .background(theme::INPUT)
+                .foreground(theme::TEXT)
+                .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                .radius(theme::radius(theme::SPACE_2))
                 .into_element(),
                 button("Add task")
                     .id("todo.add")
                     .key("todo.add")
                     .on_activate(|| TodoAction::AddTask)
-                    .background(Color::rgb(107, 222, 188))
-                    .foreground(Color::rgb(12, 33, 34))
+                    .background(theme::ACCENT)
+                    .foreground(theme::ACCENT_TEXT)
                     .typography(ui_font(13, true))
-                    .padding(EdgeInsets::symmetric(
-                        LogicalLength::from(15_u16),
-                        LogicalLength::from(11_u16),
-                    ))
-                    .radius(Radius::all(LogicalLength::from(8_u16)))
+                    .padding(theme::insets(theme::SPACE_4, theme::SPACE_3))
+                    .radius(theme::radius(theme::SPACE_2))
                     .into_element(),
             ])
-            .gap(LogicalLength::from(10_u16))
-            .background(Color::rgb(24, 33, 47))
-            .padding(EdgeInsets::all(LogicalLength::from(10_u16)))
-            .radius(Radius::all(LogicalLength::from(12_u16)))
+            .gap(LogicalLength::from(theme::SPACE_3))
+            .background(theme::SURFACE)
+            .padding(theme::all(theme::SPACE_3))
+            .radius(theme::radius(theme::SPACE_3))
             .key("todo.new-task-row")
             .into_element(),
             row([
-                text("TASKS")
-                    .foreground(Color::rgb(158, 176, 192))
-                    .typography(ui_font(12, true))
-                    .key("todo.section-title")
+                button(format!("All  {}", tasks.len()))
+                    .id("todo.filter.all")
+                    .key("todo.filter.all")
+                    .on_activate(|| TodoAction::SetFilter(TaskFilter::All))
+                    .background(if state.filter == TaskFilter::All {
+                        theme::FILTER_SELECTED
+                    } else {
+                        theme::SURFACE
+                    })
+                    .foreground(if state.filter == TaskFilter::All {
+                        theme::TEXT
+                    } else {
+                        theme::SECONDARY_TEXT
+                    })
+                    .typography(ui_font(12, state.filter == TaskFilter::All))
+                    .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                    .radius(theme::radius(theme::SPACE_2))
                     .into_element(),
-                text(format!("{} total", tasks.len()))
-                    .foreground(Color::rgb(108, 133, 157))
-                    .typography(ui_font(12, false))
+                button(format!("Active  {open}"))
+                    .id("todo.filter.active")
+                    .key("todo.filter.active")
+                    .on_activate(|| TodoAction::SetFilter(TaskFilter::Active))
+                    .background(if state.filter == TaskFilter::Active {
+                        theme::FILTER_SELECTED
+                    } else {
+                        theme::SURFACE
+                    })
+                    .foreground(if state.filter == TaskFilter::Active {
+                        theme::TEXT
+                    } else {
+                        theme::SECONDARY_TEXT
+                    })
+                    .typography(ui_font(12, state.filter == TaskFilter::Active))
+                    .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                    .radius(theme::radius(theme::SPACE_2))
+                    .into_element(),
+                button(format!("Completed  {completed}"))
+                    .id("todo.filter.completed")
+                    .key("todo.filter.completed")
+                    .on_activate(|| TodoAction::SetFilter(TaskFilter::Completed))
+                    .background(if state.filter == TaskFilter::Completed {
+                        theme::FILTER_SELECTED
+                    } else {
+                        theme::SURFACE
+                    })
+                    .foreground(if state.filter == TaskFilter::Completed {
+                        theme::TEXT
+                    } else {
+                        theme::SECONDARY_TEXT
+                    })
+                    .typography(ui_font(12, state.filter == TaskFilter::Completed))
+                    .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                    .radius(theme::radius(theme::SPACE_2))
+                    .into_element(),
+            ])
+            .gap(LogicalLength::from(theme::SPACE_2))
+            .key("todo.filters")
+            .into_element(),
+            row([
+                text(match state.filter {
+                    TaskFilter::All => "ALL TASKS",
+                    TaskFilter::Active => "TO DO",
+                    TaskFilter::Completed => "COMPLETED",
+                })
+                .foreground(theme::SECONDARY_TEXT)
+                .typography(ui_font(11, true))
+                .key("todo.section-title")
+                .into_element(),
+                text(format!("{} shown", state.filtered_count()))
+                    .foreground(theme::MUTED)
+                    .typography(ui_font(11, false))
                     .key("todo.total")
                     .into_element(),
             ])
-            .gap(LogicalLength::from(14_u16))
+            .gap(LogicalLength::from(theme::SPACE_3))
             .key("todo.section")
             .into_element(),
         ];
 
-        if tasks.is_empty() {
+        let visible = state.visible_tasks();
+        if visible.is_empty() {
+            let (heading, description) = match state.filter {
+                TaskFilter::All => ("Nothing here yet", "Add your first task above."),
+                TaskFilter::Active => ("Nothing to do", "All tasks are complete."),
+                TaskFilter::Completed => ("No completed tasks", "Completed tasks appear here."),
+            };
             content.push(
                 column([
-                    text("Nothing here yet")
-                        .foreground(Color::rgb(226, 236, 244))
-                        .typography(ui_font(17, true))
+                    text(heading)
+                        .foreground(theme::TEXT)
+                        .typography(ui_font(16, true))
                         .key("todo.empty-title")
                         .into_element(),
-                    text("Add your first task above to get started.")
-                        .foreground(Color::rgb(155, 174, 192))
+                    text(description)
+                        .foreground(theme::SECONDARY_TEXT)
                         .typography(ui_font(13, false))
                         .key("todo.empty-description")
                         .into_element(),
                 ])
-                .gap(LogicalLength::from(6_u16))
-                .background(Color::rgb(24, 33, 47))
-                .padding(EdgeInsets::all(LogicalLength::from(18_u16)))
-                .radius(Radius::all(LogicalLength::from(12_u16)))
+                .gap(LogicalLength::from(theme::SPACE_2))
+                .background(theme::SURFACE)
+                .padding(theme::all(theme::SPACE_4))
+                .radius(theme::radius(theme::SPACE_3))
                 .key("todo.empty")
                 .into_element(),
             );
         } else {
-            for task in state.visible_tasks() {
+            let mut rows: Vec<Element<TodoAction>> = Vec::new();
+            let mut group_label_emitted = false;
+            for task in visible {
                 let id = task.id();
-                let completed = task.completed();
-                content.push(
+                let done = task.completed();
+                if state.filter == TaskFilter::All && done && !group_label_emitted {
+                    rows.push(
+                        text("COMPLETED")
+                            .foreground(theme::SECONDARY_TEXT)
+                            .typography(ui_font(11, true))
+                            .key("todo.completed-group")
+                            .into_element(),
+                    );
+                    group_label_emitted = true;
+                }
+                rows.push(
                     row([
-                        button(if completed { "Reopen" } else { "Complete" })
+                        button(if done { "Reopen" } else { "Complete" })
                             .id(format!("task.{}.toggle", id.get()))
                             .key(format!("task.{}.toggle", id.get()))
                             .on_activate(move || TodoAction::SetCompleted {
                                 id,
-                                completed: !completed,
+                                completed: !done,
                             })
-                            .foreground(if completed {
-                                Color::rgb(160, 185, 197)
+                            .foreground(if done {
+                                theme::SECONDARY_TEXT
                             } else {
-                                Color::rgb(12, 33, 34)
+                                theme::ACCENT_TEXT
                             })
-                            .background(if completed {
-                                Color::rgb(45, 58, 72)
+                            .background(if done {
+                                theme::INPUT
                             } else {
-                                Color::rgb(107, 222, 188)
+                                theme::ACCENT
                             })
                             .typography(ui_font(12, true))
-                            .padding(EdgeInsets::symmetric(
-                                LogicalLength::from(9_u16),
-                                LogicalLength::from(6_u16),
-                            ))
-                            .radius(Radius::all(LogicalLength::from(7_u16)))
+                            .padding(theme::insets(theme::SPACE_2, theme::SPACE_1))
+                            .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                         text(task.title())
                             .key(format!("task.{}.title", id.get()))
-                            .foreground(if completed {
-                                Color::rgb(120, 141, 158)
+                            .foreground(if done {
+                                theme::MUTED
                             } else {
-                                Color::rgb(233, 241, 248)
+                                theme::TEXT
                             })
                             .typography(ui_font(14, false))
                             .with_layout(LayoutStyle::default().with_flex_item(
@@ -323,32 +429,32 @@ impl UiApp for TodoUi {
                             .id(format!("task.{}.remove", id.get()))
                             .key(format!("task.{}.remove", id.get()))
                             .on_activate(move || TodoAction::RemoveTask(id))
-                            .foreground(Color::rgb(149, 165, 181))
-                            .background(Color::rgb(37, 48, 63))
+                            .foreground(theme::SECONDARY_TEXT)
+                            .background(theme::INPUT)
                             .typography(ui_font(12, false))
-                            .padding(EdgeInsets::symmetric(
-                                LogicalLength::from(8_u16),
-                                LogicalLength::from(6_u16),
-                            ))
-                            .radius(Radius::all(LogicalLength::from(7_u16)))
+                            .padding(theme::insets(theme::SPACE_2, theme::SPACE_1))
+                            .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                     ])
-                    .gap(LogicalLength::from(10_u16))
-                    .background(if completed {
-                        Color::rgb(22, 29, 40)
+                    .gap(LogicalLength::from(theme::SPACE_3))
+                    .background(if done {
+                        theme::SURFACE
                     } else {
-                        Color::rgb(28, 38, 53)
+                        theme::TASK
                     })
-                    .padding(EdgeInsets::symmetric(
-                        LogicalLength::from(10_u16),
-                        LogicalLength::from(6_u16),
-                    ))
-                    .radius(Radius::all(LogicalLength::from(9_u16)))
+                    .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                    .radius(theme::radius(theme::SPACE_3))
                     .id(format!("task.{}.row", id.get()))
                     .key(format!("task.{}.row", id.get()))
                     .into_element(),
                 );
             }
+            content.push(
+                column(rows)
+                    .gap(LogicalLength::from(theme::SPACE_3))
+                    .key("todo.task-list")
+                    .into_element(),
+            );
         }
 
         if state.page_count() > 1 {
@@ -359,39 +465,31 @@ impl UiApp for TodoUi {
                         .key("todo.page.previous")
                         .enabled(state.page_index > 0)
                         .on_activate(|| TodoAction::PreviousPage)
-                        .foreground(Color::rgb(207, 222, 234))
-                        .background(Color::rgb(40, 53, 69))
-                        .padding(EdgeInsets::symmetric(
-                            LogicalLength::from(10_u16),
-                            LogicalLength::from(6_u16),
-                        ))
-                        .radius(Radius::all(LogicalLength::from(7_u16)))
+                        .foreground(theme::TEXT)
+                        .background(theme::INPUT)
+                        .typography(ui_font(12, false))
+                        .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                        .radius(theme::radius(theme::SPACE_2))
                         .into_element(),
-                    text(format!(
-                        "Page {} of {}",
-                        state.page_index + 1,
-                        state.page_count()
-                    ))
-                    .id("todo.page.label")
-                    .key("todo.page.label")
-                    .foreground(Color::rgb(150, 169, 186))
-                    .typography(ui_font(12, false))
-                    .into_element(),
+                    text(format!("Page {} of {}", state.page_index + 1, state.page_count()))
+                        .id("todo.page.label")
+                        .key("todo.page.label")
+                        .foreground(theme::SECONDARY_TEXT)
+                        .typography(ui_font(12, false))
+                        .into_element(),
                     button("Next")
                         .id("todo.page.next")
                         .key("todo.page.next")
                         .enabled(state.page_index + 1 < state.page_count())
                         .on_activate(|| TodoAction::NextPage)
-                        .foreground(Color::rgb(207, 222, 234))
-                        .background(Color::rgb(40, 53, 69))
-                        .padding(EdgeInsets::symmetric(
-                            LogicalLength::from(10_u16),
-                            LogicalLength::from(6_u16),
-                        ))
-                        .radius(Radius::all(LogicalLength::from(7_u16)))
+                        .foreground(theme::TEXT)
+                        .background(theme::INPUT)
+                        .typography(ui_font(12, false))
+                        .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
+                        .radius(theme::radius(theme::SPACE_2))
                         .into_element(),
                 ])
-                .gap(LogicalLength::from(12_u16))
+                .gap(LogicalLength::from(theme::SPACE_3))
                 .key("todo.page.row")
                 .into_element(),
             );
@@ -400,10 +498,10 @@ impl UiApp for TodoUi {
         if let Some(error) = &state.error {
             content.push(
                 text(format!("Action failed: {error}"))
-                    .foreground(Color::rgb(255, 174, 178))
-                    .background(Color::rgb(68, 35, 47))
-                    .padding(EdgeInsets::all(LogicalLength::from(10_u16)))
-                    .radius(Radius::all(LogicalLength::from(8_u16)))
+                    .foreground(theme::DANGER)
+                    .background(theme::DANGER_SURFACE)
+                    .padding(theme::all(theme::SPACE_3))
+                    .radius(theme::radius(theme::SPACE_2))
                     .key("todo.error")
                     .into_element(),
             );
@@ -411,14 +509,15 @@ impl UiApp for TodoUi {
 
         column(content)
             .key("todo.root")
-            .gap(LogicalLength::from(8_u16))
-            .padding(EdgeInsets::all(LogicalLength::from(14_u16)))
+            .gap(LogicalLength::from(theme::SPACE_4))
+            .padding(theme::all(theme::SPACE_4))
+            .background(theme::CANVAS)
             .with_layout(
                 LayoutStyle::default()
                     .with_width(LayoutDimension::Fill)
                     .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
             )
-            .foreground(Color::rgb(238, 240, 246))
+            .foreground(theme::TEXT)
     }
 
     fn update(
@@ -506,11 +605,19 @@ impl UiApp for TodoUi {
                     );
                 }
                 if created {
-                    state.page_index = (state.service.tasks().len() - 1) / TASKS_PER_PAGE;
+                    if state.filter == TaskFilter::Completed {
+                        state.filter = TaskFilter::Active;
+                    }
+                    state.page_index = state.page_count() - 1;
                     state.draft.clear();
                     state.draft_selection = 0;
                     state.draft_revision += 1;
                 }
+                UpdateOutput::effects(Effects::none())
+            }
+            TodoAction::SetFilter(filter) => {
+                state.filter = filter;
+                state.page_index = 0;
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::PreviousPage => {
@@ -522,7 +629,9 @@ impl UiApp for TodoUi {
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::SetCompleted { id, completed } => {
-                state.execute(TodoCommand::SetCompleted { id, completed });
+                if state.execute(TodoCommand::SetCompleted { id, completed }) {
+                    state.page_index = state.page_index.min(state.page_count() - 1);
+                }
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::RemoveTask(id) => {
@@ -634,6 +743,114 @@ mod tests {
         assert_eq!(state.page_count(), 1);
         assert_eq!(state.visible_tasks().len(), TASKS_PER_PAGE);
         assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn status_filters_group_visible_tasks_and_never_mutate_storage() {
+        let path = std::env::temp_dir().join(format!(
+            "runen-lab-todo-filter-{}-{}.json",
+            std::process::id(),
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
+        ));
+        assert!(!path.exists(), "filter fixture must be isolated");
+        let storage = TodoStorage::at(path.clone());
+        let mut service = TodoService::at(storage.clone()).unwrap();
+        for number in 1..=9 {
+            service
+                .execute(TodoCommand::Add {
+                    title: format!("Task {number}"),
+                })
+                .unwrap();
+        }
+        for index in [1_usize, 8] {
+            let id = service.tasks()[index].id();
+            service
+                .execute(TodoCommand::SetCompleted {
+                    id,
+                    completed: true,
+                })
+                .unwrap();
+        }
+        let before_filter = std::fs::read(&path).unwrap();
+        let mut state = TodoUiState::new(service);
+        assert_eq!(state.filter, TaskFilter::All);
+        let ids = state
+            .visible_tasks()
+            .iter()
+            .map(|task| task.id().get())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![1, 3, 4, 5, 6, 7, 8, 2]);
+
+        let _ = TodoUi::update(&mut state, TodoAction::NextPage);
+        assert_eq!(state.page_index, 1);
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetFilter(TaskFilter::Completed),
+        );
+        assert_eq!(state.page_index, 0);
+        assert_eq!(state.filtered_count(), 2);
+        assert_eq!(
+            state
+                .visible_tasks()
+                .iter()
+                .map(|task| task.id().get())
+                .collect::<Vec<_>>(),
+            vec![2, 9]
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before_filter);
+        let _ = TodoUi::update(&mut state, TodoAction::SetFilter(TaskFilter::Active));
+        assert_eq!(state.filtered_count(), 7);
+        assert_eq!(state.page_count(), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), before_filter);
+
+        // Completing an active task drops it from Active while persisting the
+        // state change; selecting Completed then allows Reopen.
+        let active_id = state.visible_tasks()[0].id();
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetCompleted {
+                id: active_id,
+                completed: true,
+            },
+        );
+        assert_eq!(state.filtered_count(), 6);
+        assert!(!state.visible_tasks().iter().any(|task| task.id() == active_id));
+        assert!(
+            storage
+                .load()
+                .unwrap()
+                .tasks()
+                .iter()
+                .any(|task| task.id() == active_id && task.completed())
+        );
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetFilter(TaskFilter::Completed),
+        );
+        assert_eq!(state.filtered_count(), 3);
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetCompleted {
+                id: active_id,
+                completed: false,
+            },
+        );
+        assert_eq!(state.filtered_count(), 2);
+
+        // The composer always surfaces its new active task, even if the
+        // user was previously inspecting Completed.
+        state.draft = "Fresh task".to_owned();
+        state.draft_selection = state.draft.len();
+        let _ = TodoUi::update(&mut state, TodoAction::AddTask);
+        assert_eq!(state.filter, TaskFilter::Active);
+        assert!(
+            state
+                .visible_tasks()
+                .iter()
+                .any(|task| task.title() == "Fresh task")
+        );
+        assert_eq!(storage.load().unwrap().tasks().len(), 10);
         std::fs::remove_file(path).unwrap();
     }
 

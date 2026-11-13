@@ -1,7 +1,7 @@
 use engine::plugins::render::RenderFlow;
 use engine::prelude::*;
 
-const BACKGROUND_COLOR: [f32; 4] = [0.06, 0.07, 0.09, 1.0];
+use crate::ui::theme;
 
 pub fn configure(app: &mut App) -> anyhow::Result<()> {
     app.add_render_flow(build_flow()?);
@@ -22,7 +22,7 @@ fn add_background(flow: RenderFlow) -> anyhow::Result<RenderFlow> {
     Ok(flow
         .fullscreen_pass("todo.clear")
         .main_surface_only()
-        .clear_color(BACKGROUND_COLOR)
+        .clear_color(theme::CLEAR_LINEAR)
         .write_surface_color()?
         .finish())
 }

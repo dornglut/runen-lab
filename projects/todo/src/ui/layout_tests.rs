@@ -257,7 +257,7 @@ fn actual_todo_add_button_preserves_m13_pointer_settlement() {
 }
 
 #[test]
-fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
+fn actual_todo_text_focus_edit_and_enter_submits_once_without_whitespace() {
     use runenui_core::{
         CommittedTextEvent, InputDeviceId, KeyLocation, KeyModifiers, KeyboardCompositionState,
         KeyboardEvent, KeyboardPhase, LogicalKey, LogicalPoint, PhysicalKey, PointerButton,
@@ -445,19 +445,25 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         "paired committed text updates Todo exactly once"
     );
 
-    let add = edited
-        .frame()
-        .nodes()
-        .iter()
-        .find(|node| {
-            node.authored_id()
-                .is_some_and(|id| id.as_str() == "todo.add")
-        })
-        .expect("real Add button after edited text")
-        .bounds();
-    let add_point =
-        LogicalPoint::new(add.x() + add.width() / 2.0, add.y() + add.height() / 2.0).unwrap();
-    click(&mut runtime, edited.input_context(), add_point, device);
+    // An unmodified Enter on the focused single-line field must submit
+    // precisely once instead of inserting whitespace or a newline.
+    let enter = KeyboardEvent::new(
+        KeyboardPhase::Down,
+        PhysicalKey::Code(String::from("Enter")),
+        LogicalKey::Enter,
+        KeyModifiers::NONE,
+        false,
+        KeyLocation::Standard,
+        KeyboardCompositionState::Inactive,
+        Some(device),
+    );
+    let entered = runtime
+        .submit_keyboard(enter)
+        .expect("original Enter reaches the focused single-line Todo field");
+    let enter_batch = runtime
+        .pump(PumpBudget::new(128, 128, 128, 128))
+        .expect("original Enter must settle through M13");
+    prove_text(&enter_batch, entered.sequence());
 
     let saved = storage
         .load()
@@ -465,6 +471,75 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
     assert_eq!(saved.tasks().len(), 1, "exactly one task was added");
     assert_eq!(saved.tasks()[0].title(), "x");
     assert!(!saved.tasks()[0].completed());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn separated_task_cards_have_real_vertical_gaps() {
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-card-gaps-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "card-gap fixture must be isolated");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage).unwrap();
+    for n in 1..=3 {
+        service
+            .execute(TodoCommand::Add {
+                title: format!("Card {n}"),
+            })
+            .unwrap();
+    }
+    service
+        .execute(TodoCommand::SetCompleted {
+            id: service.tasks()[1].id(),
+            completed: true,
+        })
+        .unwrap();
+    let mut runtime = AppRuntime::<TodoUi>::mount(TodoUiState::new(service))
+        .expect("initial mounted theme layout budget");
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .unwrap();
+    let bounds = |id: &str| {
+        publication
+            .frame()
+            .nodes()
+            .iter()
+            .find(|node| {
+                node.authored_id()
+                    .is_some_and(|authored| authored.as_str() == id)
+            })
+            .unwrap_or_else(|| panic!("missing rendered task card: {id}"))
+            .bounds()
+    };
+    // All's visible order is Active 1, Active 3, then Completed 2.
+    let first = bounds("task.1.row");
+    let second = bounds("task.3.row");
+    let completed = bounds("task.2.row");
+    assert!(
+        second.y() - (first.y() + first.height()) >= 8.0,
+        "active task cards must have meaningful vertical separation"
+    );
+    assert!(
+        completed.y() - (second.y() + second.height()) >= 8.0,
+        "completed section and task card must remain separated"
+    );
+    assert!(
+        completed.y() + completed.height() <= 600.0,
+        "last task card must remain inside default viewport"
+    );
     std::fs::remove_file(path).unwrap();
 }
 
