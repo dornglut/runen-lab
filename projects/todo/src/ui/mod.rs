@@ -8,9 +8,9 @@ use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
     EditIntent, EditResolution, Effects, Element, FlexContainerStyle, FlexDirection, FlexItemStyle,
-    FontFamily, FontWeight, GenericFontFamily, IntoUpdateOutput, ItemAlignment, LayoutBound,
+    FlexWrap, FontFamily, FontWeight, GenericFontFamily, IntoUpdateOutput, ItemAlignment, LayoutBound,
     LayoutContainer, LayoutDimension, LayoutFactor, LayoutStyle, LogicalLength, NoHostProtocol,
-    ProducerBudget, SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision,
+    OverflowPolicy, OverflowStyle, ProducerBudget, SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision,
     TextDocumentSnapshot, TextPosition, TextSelection, Typography, UiApp, UpdateOutput, View,
     WorkResidencyBudget, WorkStartBudget, button, column, row, text, text_field,
 };
@@ -56,6 +56,20 @@ fn vertically_centered_row_layout() -> LayoutStyle {
                 .with_align_items(ItemAlignment::Center),
         ))
         .with_gap(LogicalLength::from(theme::SPACE_3))
+}
+
+fn wrapping_controls_layout(gap: u16) -> LayoutStyle {
+    // Let available width determine when controls wrap. No device or viewport
+    // breakpoint, and no alternate event/interaction ownership.
+    LayoutStyle::default()
+        .with_container(LayoutContainer::Flex(
+            FlexContainerStyle::default()
+                .with_direction(FlexDirection::Row)
+                .with_align_items(ItemAlignment::Center)
+                .with_wrap(FlexWrap::Wrap),
+        ))
+        .with_gap(LogicalLength::from(gap))
+        .with_width(LayoutDimension::Fill)
 }
 
 // Opt-in, content-free native interaction diagnostics. This does not change
@@ -279,7 +293,7 @@ impl UiApp for TodoUi {
                     .radius(theme::radius(theme::SPACE_2))
                     .into_element(),
             ])
-            .with_layout(vertically_centered_row_layout())
+            .with_layout(wrapping_controls_layout(theme::SPACE_3))
             .background(theme::SURFACE)
             .padding(theme::all(theme::SPACE_3))
             .radius(theme::radius(theme::SPACE_3))
@@ -341,7 +355,7 @@ impl UiApp for TodoUi {
                     .radius(theme::radius(theme::SPACE_2))
                     .into_element(),
             ])
-            .gap(LogicalLength::from(theme::SPACE_2))
+            .with_layout(wrapping_controls_layout(theme::SPACE_2))
             .key("todo.filters")
             .into_element(),
             row([
@@ -533,7 +547,12 @@ impl UiApp for TodoUi {
                     ))
                     .with_gap(LogicalLength::from(theme::SPACE_3))
                     .with_width(LayoutDimension::Fill)
-                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
+                    .with_height(LayoutDimension::Fill)
+                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16)))
+                    .with_overflow(OverflowStyle::new(
+                        OverflowPolicy::Clip,
+                        OverflowPolicy::Scroll,
+                    )),
             )
             .foreground(theme::TEXT)
     }
