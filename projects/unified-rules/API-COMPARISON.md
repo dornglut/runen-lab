@@ -108,12 +108,12 @@ hierarchy consumers and earlier A/B tests remain unchanged.
 **What it does NOT solve:** the rule still exposes `RuleCx`; the developer
 must explicitly choose `Each<T>` or `One<T>`. Collection aggregation
 still scans/clones all values, staged transactions clone the whole world
-and rebuild the reverse graph, and the runtime is serial. A keyless rule
-cannot emit an occurrence because the old event identity requires a
-producing entity; the engine explicitly rejects this case rather than
-fabricating an origin. Time still uses the prior keyed clock contract, and
-effect requests and acknowledgments are unresolved. No performance,
-borrowed-data, concurrency or fully unified programming-model claim follows.
+and rebuild the reverse graph, and the runtime is serial. At the earlier
+**C checkpoint**, a keyless rule could not emit an occurrence without
+inventing a record origin; the later **D experiment** introduces an explicit
+global event origin and a keyless clock. Effects and acknowledgments remain
+unresolved. No performance, borrowed-data, concurrency or fully unified
+programming-model claim follows.
 
 **Compiler evidence:** the first method name `Engine::derive` shadowed
 candidate A's trait-provided `derive`, breaking six existing call sites.
@@ -123,8 +123,9 @@ algorithm proof.
 
 **Disposition:** scoped computation identity is **PROMISING AS A RESEARCH
 PRIMITIVE**, but candidate C is not an accepted frontend or a universal API.
-RULE-07 remains **HOLD** until time, events and effects can fit one coherent
-contract and a fair Bevy comparison is compiled and benchmarked.
+D adds narrower keyless clock and occurrence proofs; RULE-07 remains **HOLD**
+until a complete, consistent time/effects model and fair Bevy comparison are
+compiled and benchmarked.
 
 ## D — scoped time and in-memory occurrence origin
 
@@ -153,12 +154,12 @@ Bevy/RunenECS benchmark or full API selection follows from these tests.
 
 ## Mandatory next API architecture gate
 
-Candidate C now establishes **keyed versus keyless computation identity** in
-one experimental evaluator; it does not establish collection-valued outputs,
-time coordinates, occurrences or effect requests in the same API. The next
-research question is whether a typed computation identity can include these
-remaining dimensions **without introducing multiple application-facing
-programming paradigms**. Compile-execute both function-first and relational
+Candidate C establishes **keyed versus keyless computation identity** in
+one evaluator; D adds monotonic clock source scopes and commit-local
+occurrence origins. Neither establishes collection-valued outputs, explicit
+time coordinates, externally executed requests or acknowledgments through a
+complete API. Investigate these remaining dimensions **without introducing
+multiple application-facing programming paradigms**. Compile-execute both function-first and relational
 frontends across the same non-game and movement/hierarchy/event consumers,
 including explicit external-effect semantics. Test rustc
 inference/diagnostics and complete consumer expressiveness before adding

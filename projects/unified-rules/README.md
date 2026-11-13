@@ -118,9 +118,10 @@ app.compute::<One<InvoiceTotal>>(|ctx, ()| {
   and rollback. No fabricated entity key is inserted into the world.
 - Test cases cover cross-scope updates, deletion, retraction, unchanged
   transactions, checked arithmetic overflow rollback, rejected derived writes,
-  and a real global↔global cycle. Event emission from a keyless rule is
-  **explicitly rejected** because the old occurrence identity assumes a
-  producing entity; inventing a key would hide the semantic mismatch.
+  and a real global↔global cycle. At this earlier **C checkpoint**, event
+  emission from a keyless rule was intentionally rejected instead of assigning
+  an invented source entity. The later **D experiment** adds a separate,
+  explicitly global occurrence origin; it does not promise external delivery.
 
 **Important HOLD:** This is an experiment about identity and semantics only.
 `ctx.all` still scans/clones every keyed value; entire worlds are still
