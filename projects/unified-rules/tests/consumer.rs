@@ -779,10 +779,9 @@ const SUMMARY: Key = Key::new(0, 1);
 fn collection_game() -> Engine {
     let mut game = Engine::new();
     game.rule::<Weighted>(|ctx, key| {
-        Ok(ctx
-            .get::<Contribution>(key)?
+        ctx.get::<Contribution>(key)?
             .map(|value| value.0.checked_mul(2).map(Weighted).ok_or(Error::Overflow))
-            .transpose()?)
+            .transpose()
     })
     .unwrap();
     game.rule::<Total>(|ctx, key| {
@@ -885,8 +884,8 @@ fn aggregation_and_relation_collection_follow_independent_oracles() -> Result<()
             "round {round}: derived aggregation"
         );
         // A separate full-vector oracle; no runtime-level parent index.
-        for target in 0..COUNT {
-            let parent = Key::new(target as u32 + 1, generations[target]);
+        for (target, &generation) in generations.iter().enumerate() {
+            let parent = Key::new(target as u32 + 1, generation);
             let count = parents.iter().filter(|&&p| p == Some(parent)).count();
             assert_eq!(
                 game.get::<ChildCount>(parent),
