@@ -40,9 +40,4 @@ pub fn radius(amount: u16) -> Radius {
 
 // A wgpu sRGB presentation surface receives linear clear values. These are
 // the sRGB-to-linear channels of CANVAS (17,25,39), not normalized sRGB bytes.
-pub const CLEAR_LINEAR: [f32; 4] = [
-    0.005_605_391_6,
-    0.009_721_217,
-    0.020_288_563,
-    1.0,
-];
+pub const CLEAR_LINEAR: [f32; 4] = [0.005_605_391_6, 0.009_721_217, 0.020_288_563, 1.0];

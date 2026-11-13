@@ -7,12 +7,12 @@ mod layout_tests;
 use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
-    EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily,
-    FontWeight, GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutDimension, LayoutFactor,
-    LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, Radius, SemanticEditableMode,
-    TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition,
-    TextSelection, Typography, UiApp, UpdateOutput, View, WorkResidencyBudget, WorkStartBudget,
-    button, column, row, text, text_field,
+    EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily, FontWeight,
+    GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutDimension, LayoutFactor, LayoutStyle,
+    LogicalLength, NoHostProtocol, ProducerBudget, SemanticEditableMode, TextAffinity,
+    TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection,
+    Typography, UiApp, UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column,
+    row, text, text_field,
 };
 
 pub use host::install;
@@ -120,7 +120,11 @@ impl TodoUiState {
             .page_index
             .saturating_mul(TASKS_PER_PAGE)
             .min(ordered.len());
-        ordered.into_iter().skip(start).take(TASKS_PER_PAGE).collect()
+        ordered
+            .into_iter()
+            .skip(start)
+            .take(TASKS_PER_PAGE)
+            .collect()
     }
 
     fn draft_snapshot(&self) -> TextDocumentSnapshot {
@@ -404,22 +408,14 @@ impl UiApp for TodoUi {
                             } else {
                                 theme::ACCENT_TEXT
                             })
-                            .background(if done {
-                                theme::INPUT
-                            } else {
-                                theme::ACCENT
-                            })
+                            .background(if done { theme::INPUT } else { theme::ACCENT })
                             .typography(ui_font(12, true))
                             .padding(theme::insets(theme::SPACE_2, theme::SPACE_1))
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                         text(task.title())
                             .key(format!("task.{}.title", id.get()))
-                            .foreground(if done {
-                                theme::MUTED
-                            } else {
-                                theme::TEXT
-                            })
+                            .foreground(if done { theme::MUTED } else { theme::TEXT })
                             .typography(ui_font(14, false))
                             .with_layout(LayoutStyle::default().with_flex_item(
                                 FlexItemStyle::default().with_grow(LayoutFactor::ONE),
@@ -437,11 +433,7 @@ impl UiApp for TodoUi {
                             .into_element(),
                     ])
                     .gap(LogicalLength::from(theme::SPACE_3))
-                    .background(if done {
-                        theme::SURFACE
-                    } else {
-                        theme::TASK
-                    })
+                    .background(if done { theme::SURFACE } else { theme::TASK })
                     .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                     .radius(theme::radius(theme::SPACE_3))
                     .id(format!("task.{}.row", id.get()))
@@ -471,12 +463,16 @@ impl UiApp for TodoUi {
                         .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                         .radius(theme::radius(theme::SPACE_2))
                         .into_element(),
-                    text(format!("Page {} of {}", state.page_index + 1, state.page_count()))
-                        .id("todo.page.label")
-                        .key("todo.page.label")
-                        .foreground(theme::SECONDARY_TEXT)
-                        .typography(ui_font(12, false))
-                        .into_element(),
+                    text(format!(
+                        "Page {} of {}",
+                        state.page_index + 1,
+                        state.page_count()
+                    ))
+                    .id("todo.page.label")
+                    .key("todo.page.label")
+                    .foreground(theme::SECONDARY_TEXT)
+                    .typography(ui_font(12, false))
+                    .into_element(),
                     button("Next")
                         .id("todo.page.next")
                         .key("todo.page.next")
@@ -608,7 +604,15 @@ impl UiApp for TodoUi {
                     if state.filter == TaskFilter::Completed {
                         state.filter = TaskFilter::Active;
                     }
-                    state.page_index = state.page_count() - 1;
+                    // New titles are active, so they precede completed tasks
+                    // in All; navigate to the active group, not the last page.
+                    let active = state
+                        .service
+                        .tasks()
+                        .iter()
+                        .filter(|task| !task.completed())
+                        .count();
+                    state.page_index = active.saturating_sub(1) / TASKS_PER_PAGE;
                     state.draft.clear();
                     state.draft_selection = 0;
                     state.draft_revision += 1;
@@ -784,10 +788,7 @@ mod tests {
 
         let _ = TodoUi::update(&mut state, TodoAction::NextPage);
         assert_eq!(state.page_index, 1);
-        let _ = TodoUi::update(
-            &mut state,
-            TodoAction::SetFilter(TaskFilter::Completed),
-        );
+        let _ = TodoUi::update(&mut state, TodoAction::SetFilter(TaskFilter::Completed));
         assert_eq!(state.page_index, 0);
         assert_eq!(state.filtered_count(), 2);
         assert_eq!(
@@ -815,7 +816,12 @@ mod tests {
             },
         );
         assert_eq!(state.filtered_count(), 6);
-        assert!(!state.visible_tasks().iter().any(|task| task.id() == active_id));
+        assert!(
+            !state
+                .visible_tasks()
+                .iter()
+                .any(|task| task.id() == active_id)
+        );
         assert!(
             storage
                 .load()
@@ -824,10 +830,7 @@ mod tests {
                 .iter()
                 .any(|task| task.id() == active_id && task.completed())
         );
-        let _ = TodoUi::update(
-            &mut state,
-            TodoAction::SetFilter(TaskFilter::Completed),
-        );
+        let _ = TodoUi::update(&mut state, TodoAction::SetFilter(TaskFilter::Completed));
         assert_eq!(state.filtered_count(), 3);
         let _ = TodoUi::update(
             &mut state,
@@ -851,6 +854,53 @@ mod tests {
                 .any(|task| task.title() == "Fresh task")
         );
         assert_eq!(storage.load().unwrap().tasks().len(), 10);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn adding_to_all_selects_new_active_task_not_last_completed_page() {
+        let path = std::env::temp_dir().join(format!(
+            "runen-lab-todo-active-in-all-{}-{}.json",
+            std::process::id(),
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
+        ));
+        assert!(!path.exists(), "All filter fixture must start empty");
+        let storage = TodoStorage::at(path.clone());
+        let mut service = TodoService::at(storage.clone()).unwrap();
+        for index in 0..10 {
+            service
+                .execute(TodoCommand::Add {
+                    title: format!("Existing {index}"),
+                })
+                .unwrap();
+        }
+        for index in 1..10 {
+            let id = service.tasks()[index].id();
+            service
+                .execute(TodoCommand::SetCompleted {
+                    id,
+                    completed: true,
+                })
+                .unwrap();
+        }
+        let mut state = TodoUiState::new(service);
+        assert_eq!(state.filter, TaskFilter::All);
+        assert_eq!(state.page_count(), 2);
+        state.page_index = 1;
+        state.draft = "Newest active".to_owned();
+        state.draft_selection = state.draft.len();
+
+        let _ = TodoUi::update(&mut state, TodoAction::AddTask);
+        assert_eq!(state.page_index, 0);
+        assert!(
+            state
+                .visible_tasks()
+                .iter()
+                .any(|task| task.title() == "Newest active")
+        );
+        let all = storage.load().unwrap();
+        assert_eq!(all.tasks().len(), 11);
+        assert_eq!(all.tasks()[10].title(), "Newest active");
         std::fs::remove_file(path).unwrap();
     }
 
