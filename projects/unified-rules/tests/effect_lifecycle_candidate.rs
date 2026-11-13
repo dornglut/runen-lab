@@ -81,6 +81,7 @@ enum Decision {
     Applied,
     Stale,
     AlreadyTerminal,
+    AlreadyRequested,
     Rejected,
     NotPending,
 }
@@ -178,11 +179,37 @@ fn cancel(engine: &mut Engine, key: Key, revision: u64) -> Result<Decision, Erro
     let Some(state) = engine.get::<Execution>(key) else {
         return Ok(Decision::Stale);
     };
-    if intent.revision != revision || state.revision != revision || state.phase.terminal() {
+    if intent.revision != revision || state.revision != revision {
         return Ok(Decision::Stale);
     }
+    if state.phase.terminal() {
+        return Ok(Decision::AlreadyTerminal);
+    }
     if state.phase == Phase::CancelRequested {
-        return Ok(Decision::AlreadyTerminal); // Already requested, not finished.
+        return Ok(Decision::AlreadyRequested);
+    }
+    if state.phase == Phase::Queued {
+        // No worker has been submitted by this single-threaded test driver.
+        // Cancel the queued work without generating a fake cancel request.
+        // The terminal state and the outbox acknowledgment are still separate
+        // operations; a real concurrent executor needs an atomic claim fence.
+        engine.transact(|tx| {
+            tx.put(
+                key,
+                Execution {
+                    revision,
+                    phase: Phase::Cancelled,
+                },
+            )
+        })?;
+        for request in engine.pending_effects::<WorkCommand>() {
+            if request.value.ticket == WorkTicket { key, revision }
+                && request.value.kind == CommandKind::Start
+            {
+                engine.acknowledge_effect(request.id);
+            }
+        }
+        return Ok(Decision::Applied);
     }
     engine.transact(|tx| {
         tx.put(key, CancelRequested { revision })?;
@@ -445,7 +472,7 @@ fn unrelated_change_does_not_resubmit_unchanged_intent_or_cancel() -> Result<(),
     engine.transact(|tx| tx.put(A, Noise(1)))?;
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
     assert_eq!(cancel(&mut engine, A, 1)?, Decision::Applied);
-    assert_eq!(cancel(&mut engine, A, 1)?, Decision::AlreadyTerminal);
+    assert_eq!(cancel(&mut engine, A, 1)?, Decision::AlreadyRequested);
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 2);
     engine.transact(|tx| tx.put(A, Noise(2)))?;
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 2);
@@ -490,5 +517,51 @@ fn admission_commit_to_ack_gap_is_visible_not_claimed_atomic() -> Result<(), Err
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
     assert_eq!(executor.report(&mut engine, id, ticket(A, 8), TerminalReport::Completed)?, Decision::AlreadyTerminal);
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
+    Ok(())
+}
+
+
+#[test]
+fn cancelling_before_submission_has_no_fictitious_executor_work() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+    create(&mut engine, A, 1)?;
+    let queued = pending(&engine, ticket(A, 1), CommandKind::Start);
+    assert_eq!(cancel(&mut engine, A, 1)?, Decision::Applied);
+    assert_eq!(phase(&engine, A), Some(Phase::Cancelled));
+    assert!(engine.pending_effects::<WorkCommand>().is_empty());
+    assert_eq!(executor.submit(&mut engine, queued)?, Decision::NotPending);
+    assert_eq!(cancel(&mut engine, A, 1)?, Decision::AlreadyTerminal);
+    Ok(())
+}
+
+#[test]
+fn despawned_generational_key_cannot_receive_a_late_completion() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+    create(&mut engine, A, 1)?;
+    let old = pending(&engine, ticket(A, 1), CommandKind::Start);
+    executor.submit(&mut engine, old)?;
+    engine.transact(|tx| tx.despawn(A))?;
+    let reused = Key::new(A.slot, A.generation + 1);
+    create(&mut engine, reused, 1)?;
+    let current = pending(&engine, ticket(reused, 1), CommandKind::Start);
+    assert_eq!(
+        executor.report(&mut engine, old, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::Stale
+    );
+    assert_eq!(phase(&engine, reused), Some(Phase::Queued));
+    assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
+    executor.submit(&mut engine, current)?;
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            current,
+            ticket(reused, 1),
+            TerminalReport::Completed
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(phase(&engine, reused), Some(Phase::Completed));
     Ok(())
 }

@@ -247,7 +247,9 @@ The candidate's admission policy:
 - **Requested → submitted → terminal**; `CancelRequested` is an
   intermediate state, *not* proof of cancellation. Completion may win a
   cancellation race, or an acknowledged cancellation may win. Cancel rejection
-  returns the still-running operation to `Submitted`.
+  returns the still-running operation to `Submitted`. Cancelling a queued,
+  unsubmitted request needs no fabricated executor command; the test-only
+  driver retracts its pending request after admitting `Cancelled`.
 - A terminal report must match the pending `EffectId`, its typed payload's
   exact `WorkTicket` and origin, the current live `Key` generation, and
   the current operation revision. Old-generation or obsolete completions
