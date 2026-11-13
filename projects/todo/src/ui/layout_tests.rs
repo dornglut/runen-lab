@@ -653,9 +653,7 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
         InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
         PointerEvent, PointerId, PointerPhase,
     };
-    use runenui_runtime::{
-        InputArbitrationRecord, PumpBudget, RuntimeStatus, UiInputFinality,
-    };
+    use runenui_runtime::{InputArbitrationRecord, PumpBudget, RuntimeStatus, UiInputFinality};
 
     let path = std::env::temp_dir().join(format!(
         "runen-lab-todo-page-pointer-{}.json",
@@ -681,10 +679,7 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
         )
         .unwrap();
     let style = runenui_core::StyleEnvironment::default();
-    let context = SurfaceBuildContext::tight(
-        &style,
-        LogicalSize::try_new(800.0, 600.0).unwrap(),
-    );
+    let context = SurfaceBuildContext::tight(&style, LogicalSize::try_new(800.0, 600.0).unwrap());
     let publication = runtime.publish_surface(&context).unwrap();
     let next = publication
         .frame()
@@ -706,9 +701,14 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
     let device = InputDeviceId::new(11).unwrap();
 
     for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
-        let mut event =
-            PointerEvent::new(pointer, PointerDeviceKind::Mouse, phase, point, surface.clone())
-                .with_device_id(device);
+        let mut event = PointerEvent::new(
+            pointer,
+            PointerDeviceKind::Mouse,
+            phase,
+            point,
+            surface.clone(),
+        )
+        .with_device_id(device);
         if phase == PointerPhase::Down {
             event = event
                 .with_buttons(PointerButtons::new([PointerButton::Primary]))
@@ -728,7 +728,8 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
             "Next {phase:?} must not poison the running runtime"
         );
         assert!(
-            batch.processed_through()
+            batch
+                .processed_through()
                 .is_some_and(|through| through >= submitted.sequence()),
             "Next {phase:?} must settle the original input sequence"
         );
