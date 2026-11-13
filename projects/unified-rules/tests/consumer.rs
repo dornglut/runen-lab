@@ -781,13 +781,7 @@ fn collection_game() -> Engine {
     game.rule::<Weighted>(|ctx, key| {
         Ok(ctx
             .get::<Contribution>(key)?
-            .map(|value| {
-                value
-                    .0
-                    .checked_mul(2)
-                    .map(Weighted)
-                    .ok_or(Error::Overflow)
-            })
+            .map(|value| value.0.checked_mul(2).map(Weighted).ok_or(Error::Overflow))
             .transpose()?)
     })
     .unwrap();
@@ -795,12 +789,12 @@ fn collection_game() -> Engine {
         if key != SUMMARY {
             return Ok(None);
         }
-        let value = ctx.all::<Weighted>()?.into_iter().try_fold(
-            0_i64,
-            |sum, (_, contribution)| {
+        let value = ctx
+            .all::<Weighted>()?
+            .into_iter()
+            .try_fold(0_i64, |sum, (_, contribution)| {
                 sum.checked_add(contribution.0).ok_or(Error::Overflow)
-            },
-        )?;
+            })?;
         Ok(Some(Total(value)))
     })
     .unwrap();
@@ -824,9 +818,7 @@ fn aggregation_and_relation_collection_follow_independent_oracles() -> Result<()
         .map(|i| Some(i64::try_from(i).expect("small index")))
         .collect();
     let mut generations = [1_u32; COUNT];
-    let mut parents: Vec<Option<Key>> = (0..COUNT)
-        .map(|i| (i > 0).then_some(SUMMARY))
-        .collect();
+    let mut parents: Vec<Option<Key>> = (0..COUNT).map(|i| (i > 0).then_some(SUMMARY)).collect();
 
     game.transact(|tx| {
         tx.spawn(SUMMARY)?;
@@ -865,7 +857,10 @@ fn aggregation_and_relation_collection_follow_independent_oracles() -> Result<()
             parents[index] = Some(SUMMARY);
         } else if round % 7 == 2 && values[index].is_some() {
             // Reparent to another currently live key.
-            let destination = Key::new((index + 1) as u32 % COUNT as u32 + 1, generations[(index + 1) % COUNT]);
+            let destination = Key::new(
+                (index + 1) as u32 % COUNT as u32 + 1,
+                generations[(index + 1) % COUNT],
+            );
             game.transact(|tx| tx.put(key, Parent(destination)))?;
             parents[index] = Some(destination);
         } else if round % 7 == 3 {
@@ -900,7 +895,10 @@ fn aggregation_and_relation_collection_follow_independent_oracles() -> Result<()
             );
         }
         let root_count = parents.iter().filter(|&&p| p == Some(SUMMARY)).count();
-        assert_eq!(game.get::<ChildCount>(SUMMARY), Some(ChildCount(root_count)));
+        assert_eq!(
+            game.get::<ChildCount>(SUMMARY),
+            Some(ChildCount(root_count))
+        );
     }
     Ok(())
 }

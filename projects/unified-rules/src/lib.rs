@@ -499,8 +499,12 @@ impl Engine {
             .filter_map(|(fact, kind)| {
                 let key = fact.key?;
                 match kind {
-                    ChangeKind::Added => self.get::<T>(key).map(|value| OutputChange::Added(key, value)),
-                    ChangeKind::Updated => self.get::<T>(key).map(|value| OutputChange::Updated(key, value)),
+                    ChangeKind::Added => self
+                        .get::<T>(key)
+                        .map(|value| OutputChange::Added(key, value)),
+                    ChangeKind::Updated => self
+                        .get::<T>(key)
+                        .map(|value| OutputChange::Updated(key, value)),
                     ChangeKind::Removed => Some(OutputChange::Removed(key)),
                 }
             })
@@ -567,8 +571,7 @@ impl Engine {
         // New or removed keys can change every derived typed collection.
         // This is deliberately broad: exact member-level incremental admission
         // and selective aggregate invalidation are not established here.
-        if !removed_keys.is_empty()
-            || proposed.live.values().any(|&key| !self.world.contains(key))
+        if !removed_keys.is_empty() || proposed.live.values().any(|&key| !self.world.contains(key))
         {
             for rule in &self.rules {
                 changes.insert(Fact::collection_type(rule.output));
