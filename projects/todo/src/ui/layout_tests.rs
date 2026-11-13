@@ -796,7 +796,13 @@ fn mixed_active_and_completed_page_keeps_navigation_visible() {
             })
             .unwrap();
     }
-    for task in service.tasks().iter().take(2).map(|task| task.id()).collect::<Vec<_>>() {
+    for task in service
+        .tasks()
+        .iter()
+        .take(2)
+        .map(|task| task.id())
+        .collect::<Vec<_>>()
+    {
         service
             .execute(TodoCommand::SetCompleted {
                 id: task,
