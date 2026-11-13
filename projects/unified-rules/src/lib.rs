@@ -480,6 +480,4 @@ impl Engine {
         self.last_evaluations = evaluations;
         Ok(())
     }
-
-
 }
