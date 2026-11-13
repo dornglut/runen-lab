@@ -121,6 +121,14 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
             })
             .unwrap();
         assert!(field.bounds().x() + field.bounds().width() <= add.bounds().x());
+        let field_mid = field.bounds().y() + field.bounds().height() / 2.0;
+        let add_mid = add.bounds().y() + add.bounds().height() / 2.0;
+        assert!(
+            (field_mid - add_mid).abs() <= 1.0,
+            "the placeholder field must be vertically centered with Add at width {surface_width}: field={:?}, add={:?}",
+            field.bounds(),
+            add.bounds()
+        );
         assert!(add.bounds().x() + add.bounds().width() <= surface_width);
         assert!(add.bounds().y() + add.bounds().height() <= 600.0);
         let heading = publication
@@ -792,6 +800,33 @@ fn persisted_full_page_mounts_bounded_ui_and_pagination_without_truncating_stora
             && bounds.x() + bounds.width() <= 800.0
             && bounds.y() + bounds.height() <= 600.0,
         "Next control must be visible inside the default Todo window: {bounds:?}"
+    );
+    let page_label = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.page.label")
+        })
+        .expect("pagination label must remain published")
+        .bounds();
+    let previous = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.page.previous")
+        })
+        .expect("Previous must remain published")
+        .bounds();
+    let center_y = |rect: runenui_core::LogicalRect| rect.y() + rect.height() / 2.0;
+    assert!(
+        page_label.height() < bounds.height()
+            && (center_y(page_label) - center_y(previous)).abs() <= 1.0
+            && (center_y(page_label) - center_y(bounds)).abs() <= 1.0,
+        "pagination label must use intrinsic-height text and center alongside both buttons: label={page_label:?}, previous={previous:?}, next={bounds:?}"
     );
     assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE + 1);
     std::fs::remove_file(path).unwrap();
