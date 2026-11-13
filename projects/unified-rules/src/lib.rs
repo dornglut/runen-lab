@@ -389,9 +389,7 @@ impl Engine {
                 match (old, new) {
                     (None, None) => Ok(()),
                     (Some(previous), Some(current)) if previous == current => Ok(()),
-                    (Some(previous), Some(current)) if epoch(&current) > epoch(&previous) => {
-                        Ok(())
-                    }
+                    (Some(previous), Some(current)) if epoch(&current) > epoch(&previous) => Ok(()),
                     (None, Some(current)) if epoch(&current) > 0 => Ok(()),
                     _ => Err(Error::InvalidClock),
                 }

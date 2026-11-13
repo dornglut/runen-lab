@@ -615,15 +615,9 @@ fn clock_admission_rejects_repeats_regressions_removal_and_zero() -> Result<(), 
         game.transact(|tx| tx.despawn(CLOCK)),
         Err(Error::InvalidClock)
     );
-    assert_eq!(
-        game.get::<Step>(CLOCK),
-        Some(Step { epoch: 2, dt: 1 })
-    );
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 2, dt: 1 }));
     game.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: 1 }))?;
-    assert_eq!(
-        game.get::<Step>(CLOCK),
-        Some(Step { epoch: 3, dt: 1 })
-    );
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 3, dt: 1 }));
     Ok(())
 }
 
@@ -641,7 +635,10 @@ fn occurrences_preserve_same_key_multiplicity_and_discard_failed_commit() -> Res
         let Some(Contact(true)) = ctx.get::<Contact>(key)? else {
             return Ok(None);
         };
-        if ctx.advanced::<Step>(CLOCK)?.is_some_and(|step| step.epoch == 2) {
+        if ctx
+            .advanced::<Step>(CLOCK)?
+            .is_some_and(|step| step.epoch == 2)
+        {
             return Err(Error::Overflow);
         }
         Ok(None)
@@ -686,10 +683,7 @@ fn occurrences_preserve_same_key_multiplicity_and_discard_failed_commit() -> Res
         game.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 1 })),
         Err(Error::Overflow)
     );
-    assert_eq!(
-        game.get::<Step>(CLOCK),
-        Some(Step { epoch: 1, dt: 1 })
-    );
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 1, dt: 1 }));
     assert_eq!(game.events::<ContactPulse>(), expected);
     game.transact(|_| Ok(()))?;
     assert!(game.events::<ContactPulse>().is_empty());
