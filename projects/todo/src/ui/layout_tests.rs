@@ -570,6 +570,23 @@ fn separated_task_cards_have_real_vertical_gaps() {
         completed.y() + completed.height() <= 600.0,
         "last task card must remain inside default viewport"
     );
+
+    // Flex's default cross-axis Stretch can fill the title's layout box
+    // without centering its painted text. Compare actual published bounds
+    // of the title and action controls for both active and completed rows.
+    let center_y = |rect: runenui_core::LogicalRect| rect.y() + rect.height() / 2.0;
+    for id in [1_u64, 2, 3] {
+        let row = bounds(&format!("task.{id}.row"));
+        let title = bounds(&format!("task.{id}.title"));
+        let toggle = bounds(&format!("task.{id}.toggle"));
+        let remove = bounds(&format!("task.{id}.remove"));
+        assert!(
+            (center_y(title) - center_y(toggle)).abs() <= 1.0
+                && (center_y(title) - center_y(remove)).abs() <= 1.0
+                && (center_y(title) - center_y(row)).abs() <= 1.0,
+            "task {id} title must be vertically centered with its actions: row={row:?}, title={title:?}, toggle={toggle:?}, remove={remove:?}"
+        );
+    }
     std::fs::remove_file(path).unwrap();
 }
 
