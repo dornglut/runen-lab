@@ -224,10 +224,11 @@ impl UiApp for TodoUi {
                 text(format!("{open} to do  /  {completed} completed"))
                     .foreground(theme::SECONDARY_TEXT)
                     .typography(ui_font(13, false))
+                    .id("todo.summary")
                     .key("todo.summary")
                     .into_element(),
             ])
-            .gap(LogicalLength::from(theme::SPACE_1))
+            .gap(LogicalLength::from(theme::SPACE_2))
             .key("todo.header")
             .into_element(),
             row([
@@ -338,6 +339,7 @@ impl UiApp for TodoUi {
                 })
                 .foreground(theme::SECONDARY_TEXT)
                 .typography(ui_font(11, true))
+                .id("todo.section-title")
                 .key("todo.section-title")
                 .into_element(),
                 text(format!("{} shown", state.filtered_count()))
@@ -503,9 +505,11 @@ impl UiApp for TodoUi {
             );
         }
 
+        // Separate the header, composer, filters and task list clearly, while
+        // retaining the six-row default-viewport pagination budget.
         column(content)
             .key("todo.root")
-            .gap(LogicalLength::from(theme::SPACE_4))
+            .gap(LogicalLength::from(theme::SPACE_5))
             .padding(theme::all(theme::SPACE_4))
             .background(theme::CANVAS)
             .with_layout(
