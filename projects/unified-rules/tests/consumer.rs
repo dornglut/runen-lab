@@ -308,9 +308,8 @@ fn independently_computed_hierarchy_oracle_over_changing_tree() -> Result<(), Er
     let mut game = new_game();
     const COUNT: usize = 128;
     let mut local: Vec<i64> = (0..COUNT).map(|i| (i % 7) as i64).collect();
-    let mut parents: Vec<Option<usize>> = (0..COUNT)
-        .map(|i| (i > 0).then(|| (i - 1) / 2))
-        .collect();
+    let mut parents: Vec<Option<usize>> =
+        (0..COUNT).map(|i| (i > 0).then(|| (i - 1) / 2)).collect();
     game.transact(|tx| {
         for slot in 0..COUNT {
             tx.spawn(Key::new(slot as u32, 1))?;
