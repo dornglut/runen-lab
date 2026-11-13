@@ -28,15 +28,20 @@ cargo run --release --locked
 
 ## Exploratory same-host benchmark
 
-The exact-head GitHub workflow also compiles the Release binary and samples four deterministic workloads with 2,048 objects: one-object sparse position changes, all-object dense position changes, shared-material fanout, and subset relation reassignment. It executes each backend in separate processes and rotates execution order over six rounds. The workflow archives raw CSV rows and OS/CPU/toolchain information. The summary reports median **propagation-and-publication latency per update**, not whole-transaction latency.
+**Two distinct timing modes:** `propagation` measures backend apply + derived publication using precomputed before/after states and dirty sets; `transaction` additionally includes shared `propose()` validation, authoritative-state copying, dirty-set construction, and data handoff on every update. Neither mode times input parsing, system setup, or correctness readback. Alternating A/B updates are checked against the same transaction semantics in both directions before timing.
+
+Benchmarks cover noop scheduler baseline, one-object sparse edits, all-object dense changes, material fanout, and relation reassignment. They include a fourth, deliberately simple **full-recompute reference** (copying the complete state and rebuilding packets), which is not an ECS. No baseline or stage may be reported as a framework-wide ranking.
+
+
+The exact-head GitHub workflow also compiles the Release binary and samples four deterministic workloads with 128 and 2,048 objects across five workloads. It executes each backend in separate processes and rotates execution order over six rounds. The workflow archives raw CSV rows and OS/CPU/toolchain information. The summary reports median **propagation-and-publication latency per update**, not whole-transaction latency.
 
 To reproduce manually after `cargo build --release --locked`:
 
 ```sh
-python3 tools/run_benchmarks.py --binary target/release/runtime-comparison --output benchmark-raw.csv --rounds 6 --objects 2048
+python3 tools/run_benchmarks.py --binary target/release/runtime-comparison --output benchmark-raw.csv --rounds 6 --objects 128 2048
 ```
 
-The timed region includes backend mutation, native scheduling, index updates, and derived publication. Precomputed authoritative before/after states, transaction admission, setup, input decoding, and correctness readback are **excluded**. Setup time is measured separately. Memory fields are Linux process RSS at baseline/after setup and peak high-water mark; they are **not** precise per-backend allocation measurements. A single GitHub-hosted machine, fixed schema, and this specialized application cannot establish general-purpose superiority. Repeated independent hosts, additional sizes, admission, retained-memory, and developer coordination remain unresolved.
+Both timed regions include backend mutation, native scheduling, index updates, and derived publication. Transaction mode includes shared admission and state cloning; propagation mode excludes them. Setup, input decoding, and correctness readback remain **excluded**. Setup time is measured separately. Memory fields are Linux process RSS at baseline/after setup and peak high-water mark; they are **not** precise per-backend allocation measurements. The `transaction` mode uses one common staging implementation, not an independently implemented backend admission path. A single GitHub-hosted machine, fixed schema, and this specialized application cannot establish general-purpose superiority. Repeated independent hosts, additional sizes, admission, retained-memory, and developer coordination remain unresolved.
 
 The repository-level `cargo validate` remains a separate required gate. A project-specific GitHub workflow runs this replay on the exact PR head; project validation integration is coordinated with Runen Lab draft PR #8 and must not overwrite that owner's independent work.
 

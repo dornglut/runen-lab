@@ -1,5 +1,5 @@
 //! Shared input semantics and independent expected-state digest generation.
-//! This module is used for semantic replay ONLY. Never use it to time a backend.
+//! Propagation-only timing excludes staging; end-to-end timing includes shared admission.
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};

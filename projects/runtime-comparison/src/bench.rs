@@ -2,7 +2,7 @@
 //! Admission/fixture parsing, setup, and verification are excluded from the timed loop.
 use crate::Consumer;
 use crate::bevy_backend::BevyBackend;
-use crate::contract::{Data, Dirty, Obj};
+use crate::contract::{Data, Dirty, Edit, Key, Obj, Packet, propose};
 use crate::runen_backend::RunenBackend;
 use crate::tde::Tde;
 use std::collections::BTreeMap;
@@ -46,6 +46,7 @@ fn states(size: u32, workload: &str) -> (Data, Data, Dirty) {
     let mut dirty = Dirty::default();
 
     match workload {
+        "noop" => {}
         "sparse" => {
             after.objects.get_mut(&0).expect("object zero").x += 1;
             dirty.objects.insert(0);
@@ -73,20 +74,110 @@ fn states(size: u32, workload: &str) -> (Data, Data, Dirty) {
 
     before.validate().expect("valid baseline");
     after.validate().expect("valid mutated state");
-    assert_ne!(before, after, "workload must have an effect");
+    if workload != "noop" {
+        assert_ne!(before, after, "workload must have an effect");
+    }
     (before, after, dirty)
 }
 
+/// Deliberately simple full-rebuild reference. Not another ECS and not a TDE backend.
+struct FullRecompute {
+    source: Data,
+    published: BTreeMap<Key, Packet>,
+}
+
+impl FullRecompute {
+    fn new(source: &Data) -> Self {
+        Self {
+            source: source.clone(),
+            published: source.packets(),
+        }
+    }
+}
+
+impl Consumer for FullRecompute {
+    fn label(&self) -> &'static str {
+        "full-recompute-reference"
+    }
+
+    fn apply(&mut self, _previous: &Data, next: &Data, _dirty: &Dirty) {
+        self.source = next.clone();
+        self.published = next.packets();
+    }
+
+    fn data(&self) -> Data {
+        self.source.clone()
+    }
+
+    fn packets(&self) -> BTreeMap<Key, Packet> {
+        self.published.clone()
+    }
+}
+
+/// Build the same legal transactions for every backend, outside timed execution.
+/// The benchmark workloads change only one field family per object.
+fn transition_edits(before: &Data, after: &Data, dirty: &Dirty) -> Vec<Edit> {
+    let mut edits = Vec::with_capacity(dirty.objects.len() + dirty.materials.len());
+    for &material in &dirty.materials {
+        edits.push(Edit::Recolor {
+            material,
+            color: after.materials[&material],
+        });
+    }
+    for &slot in &dirty.objects {
+        let old = before.objects.get(&slot).expect("benchmark object exists");
+        let new = after.objects.get(&slot).expect("benchmark object persists");
+        let generation = i64::from(old.r#gen);
+        assert_eq!(old.r#gen, new.r#gen);
+        if old.material != new.material {
+            assert_eq!((old.x, old.y, old.radius), (new.x, new.y, new.radius));
+            edits.push(Edit::Reassign {
+                slot,
+                r#gen: generation,
+                material: new.material,
+            });
+        } else if old.x != new.x || old.y != new.y {
+            assert_eq!(old.radius, new.radius);
+            edits.push(Edit::Move {
+                slot,
+                r#gen: generation,
+                x: new.x,
+                y: new.y,
+            });
+        } else if old.radius != new.radius {
+            edits.push(Edit::Radius {
+                slot,
+                r#gen: generation,
+                radius: new.radius,
+            });
+        } else {
+            panic!("benchmark dirty object does not change");
+        }
+    }
+    edits
+}
+
+fn apply_transaction(
+    consumer: &mut dyn Consumer,
+    source: &mut Data,
+    ops: &[Edit],
+) {
+    let next = propose(source, ops).expect("valid benchmark transaction");
+    consumer.apply(source, &next.data, &next.dirty);
+    *source = next.data;
+}
+
 pub fn run(args: &[String]) {
-    assert_eq!(
-        args.len(),
-        4,
-        "usage: --bench BACKEND WORKLOAD OBJECTS ITERATIONS"
+    assert!(
+        args.len() == 4 || args.len() == 5,
+        "usage: --bench BACKEND WORKLOAD OBJECTS ITERATIONS [propagation|transaction]"
     );
     let backend = args[0].as_str();
     let workload = args[1].as_str();
     let size: u32 = args[2].parse().expect("integer object count");
     let iterations: usize = args[3].parse().expect("integer iteration count");
+    let mode = args.get(4).map_or("propagation", String::as_str);
+    assert!(matches!(mode, "propagation" | "transaction"), "unknown benchmark mode");
     assert!((32..=100_000).contains(&size), "object count out of range");
     assert!(
         (2..=100_000).contains(&iterations) && iterations.is_multiple_of(2),
@@ -94,12 +185,26 @@ pub fn run(args: &[String]) {
     );
 
     let (before, after, dirty) = states(size, workload);
+    let forward = transition_edits(&before, &after, &dirty);
+    let reverse = transition_edits(&after, &before, &dirty);
+    // Validate the actual authored inputs, including reverse direction,
+    // against the shared transaction contract before measuring.
+    let verified_forward = propose(&before, &forward).expect("forward transaction");
+    assert_eq!(verified_forward.data, after);
+    assert_eq!(verified_forward.dirty.objects, dirty.objects);
+    assert_eq!(verified_forward.dirty.materials, dirty.materials);
+    let verified_reverse = propose(&after, &reverse).expect("reverse transaction");
+    assert_eq!(verified_reverse.data, before);
+    assert_eq!(verified_reverse.dirty.objects, dirty.objects);
+    assert_eq!(verified_reverse.dirty.materials, dirty.materials);
+
     let baseline_rss = linux_memory_kib("VmRSS:");
     let start_setup = Instant::now();
     let mut consumer: Box<dyn Consumer> = match backend {
         "tde" => Box::new(Tde::new(&before)),
         "bevy" => Box::new(BevyBackend::new(&before)),
         "runen" => Box::new(RunenBackend::new(&before)),
+        "recompute" => Box::new(FullRecompute::new(&before)),
         _ => panic!("unknown backend: {backend}"),
     };
     let setup_ns = start_setup.elapsed().as_nanos();
@@ -114,25 +219,39 @@ pub fn run(args: &[String]) {
     assert_eq!(consumer.data(), before);
     assert_eq!(consumer.packets(), before.packets());
 
+    let mut source = before.clone();
     for index in 0..20 {
-        if index % 2 == 0 {
-            consumer.apply(&before, &after, &dirty);
+        let (from, to, ops) = if index % 2 == 0 {
+            (&before, &after, &forward)
         } else {
-            consumer.apply(&after, &before, &dirty);
+            (&after, &before, &reverse)
+        };
+        if mode == "transaction" {
+            apply_transaction(consumer.as_mut(), &mut source, ops);
+        } else {
+            consumer.apply(from, to, &dirty);
         }
     }
 
     let started = Instant::now();
     for index in 0..iterations {
-        if index % 2 == 0 {
-            consumer.apply(&before, &after, &dirty);
+        let (from, to, ops) = if index % 2 == 0 {
+            (&before, &after, &forward)
         } else {
-            consumer.apply(&after, &before, &dirty);
+            (&after, &before, &reverse)
+        };
+        if mode == "transaction" {
+            apply_transaction(consumer.as_mut(), &mut source, ops);
+        } else {
+            consumer.apply(from, to, &dirty);
         }
     }
-    let apply_ns = started.elapsed().as_nanos();
+    let elapsed_ns = started.elapsed().as_nanos();
     let peak_rss = linux_memory_kib("VmHWM:");
 
+    if mode == "transaction" {
+        assert_eq!(source, before, "final admitted source state");
+    }
     assert_eq!(consumer.data(), before, "final authoritative source state");
     assert_eq!(
         consumer.packets(),
@@ -141,9 +260,31 @@ pub fn run(args: &[String]) {
     );
 
     println!(
-        "BENCH,{backend},{workload},{size},{iterations},{setup_ns},{apply_ns},{},{},{}",
+        "BENCH,{backend},{workload},{size},{iterations},{mode},{setup_ns},{elapsed_ns},{},{},{}",
         memory_field(baseline_rss),
         memory_field(after_setup_rss),
         memory_field(peak_rss)
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{states, transition_edits};
+    use crate::contract::propose;
+
+    #[test]
+    fn benchmark_transactions_follow_the_shared_contract() {
+        for size in [32, 128] {
+            for workload in ["noop", "sparse", "dense", "fanout", "reassign"] {
+                let (before, after, dirty) = states(size, workload);
+                let forward = transition_edits(&before, &after, &dirty);
+                let reverse = transition_edits(&after, &before, &dirty);
+                let accepted = propose(&before, &forward).expect("forward accepted");
+                assert_eq!(accepted.data, after);
+                assert_eq!(accepted.dirty.objects, dirty.objects);
+                assert_eq!(accepted.dirty.materials, dirty.materials);
+                assert_eq!(propose(&after, &reverse).expect("reverse accepted").data, before);
+            }
+        }
+    }
 }

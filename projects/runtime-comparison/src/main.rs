@@ -217,7 +217,7 @@ fn main() {
     }
     assert!(
         args.is_empty(),
-        "usage: runtime-comparison [--bench BACKEND WORKLOAD OBJECTS ITERATIONS]"
+        "usage: runtime-comparison [--bench BACKEND WORKLOAD OBJECTS ITERATIONS [MODE]]"
     );
     let original = include_str!("../fixtures/oracle.jsonl");
     let extended = include_str!("../fixtures/extended.jsonl");
