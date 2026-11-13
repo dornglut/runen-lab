@@ -1,0 +1,7 @@
+{
+  "name": "render_packets",
+  "input": "object",
+  "join": "material",
+  "foreign_key": "material",
+  "output": "packet"
+}
