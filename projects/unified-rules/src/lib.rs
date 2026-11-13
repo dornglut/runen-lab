@@ -30,7 +30,6 @@ pub enum Error {
     UnregisteredClock,
     InvalidClock,
     ScopeMismatch,
-    GlobalOccurrenceUnsupported,
 }
 
 trait Column {
@@ -233,6 +232,22 @@ pub struct Occurrence<T> {
     pub value: T,
 }
 
+/// Explicit origin of a commit-local event: a record or a keyless computation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum EventOrigin {
+    Key(Key),
+    Global,
+}
+
+/// Commit-local occurrence with an honest origin, including keyless rules.
+/// The ordinal is scoped to (origin, event type) in one committed snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopedOccurrence<T> {
+    pub source: EventOrigin,
+    pub ordinal: u32,
+    pub value: T,
+}
+
 struct StagedEvent {
     source: Task,
     ordinal: u32,
@@ -243,6 +258,21 @@ type ClockValidator = dyn Fn(&World, &World) -> Result<(), Error>;
 struct ClockSpec {
     fact: Fact,
     validate: Rc<ClockValidator>,
+}
+
+/// Admission policy shared by keyed and keyless monotonic clock sources.
+fn validate_clock<T: Eq>(
+    before: Option<T>,
+    after: Option<T>,
+    epoch: &impl Fn(&T) -> u64,
+) -> Result<(), Error> {
+    match (before, after) {
+        (None, None) => Ok(()),
+        (Some(previous), Some(current)) if previous == current => Ok(()),
+        (Some(previous), Some(current)) if epoch(&current) > epoch(&previous) => Ok(()),
+        (None, Some(current)) if epoch(&current) > 0 => Ok(()),
+        _ => Err(Error::InvalidClock),
+    }
 }
 
 pub struct Transaction<'a> {
@@ -423,6 +453,46 @@ struct Evaluator<'r> {
     insertions: HashSet<Fact>,
     output_changes: HashMap<Fact, ChangeKind>,
 }
+/// Typed clock input admission, independent of the rule's output scope.
+/// Clock validation is not a second scheduler; it executes before all rules.
+pub trait ClockShape: OutputShape {
+    fn register(
+        engine: &mut Engine,
+        at: Self::At,
+        epoch: impl Fn(&Self::Value) -> u64 + 'static,
+    ) -> Result<(), Error>;
+    fn advanced(
+        cx: &mut RuleCx<'_, '_>,
+        at: Self::At,
+    ) -> Result<Option<Self::Value>, Error>;
+}
+
+impl<T: Clone + Eq + 'static> ClockShape for Each<T> {
+    fn register(
+        engine: &mut Engine,
+        at: Key,
+        epoch: impl Fn(&T) -> u64 + 'static,
+    ) -> Result<(), Error> {
+        engine.clock(at, epoch)
+    }
+    fn advanced(cx: &mut RuleCx<'_, '_>, at: Key) -> Result<Option<T>, Error> {
+        cx.advanced(at)
+    }
+}
+
+impl<T: Clone + Eq + 'static> ClockShape for One<T> {
+    fn register(
+        engine: &mut Engine,
+        _: (),
+        epoch: impl Fn(&T) -> u64 + 'static,
+    ) -> Result<(), Error> {
+        engine.clock_singleton(epoch)
+    }
+    fn advanced(cx: &mut RuleCx<'_, '_>, _: ()) -> Result<Option<T>, Error> {
+        cx.advanced_singleton::<T>()
+    }
+}
+
 impl Evaluator<'_> {
     fn evaluate(&mut self, task: Task) -> Result<(), Error> {
         if matches!(task.at, TaskAt::Key(key) if !self.world.contains(key))
@@ -548,14 +618,35 @@ impl RuleCx<'_, '_> {
         self.changed::<T>(key)
     }
 
-    /// Stage a typed occurrence; it becomes visible only after a successful commit.
-    /// This does not execute I/O or guarantee delivery to external consumers.
-    pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
-        // Existing occurrence consumers have per-entity source/ordinal semantics.
-        // Do not manufacture an entity key for a keyless producer.
-        if matches!(self.task.at, TaskAt::Singleton) {
-            return Err(Error::GlobalOccurrenceUnsupported);
+    /// Read a changed monotonic clock through its typed scope.
+    pub fn advanced_in<S: ClockShape>(
+        &mut self,
+        at: S::At,
+    ) -> Result<Option<S::Value>, Error> {
+        S::advanced(self, at)
+    }
+
+    /// A registered keyless clock advances only when the admitted value changes.
+    pub fn advanced_singleton<T: Clone + Eq + 'static>(&mut self) -> Result<Option<T>, Error> {
+        if !self
+            .evaluator
+            .clocks
+            .iter()
+            .any(|clock| clock.fact == Fact::singleton::<T>())
+        {
+            return Err(Error::UnregisteredClock);
         }
+        let current = self.singleton::<T>()?;
+        Ok(if current != self.previous_singleton::<T>() {
+            current
+        } else {
+            None
+        })
+    }
+
+    /// Stage a typed occurrence with the rule's actual keyed or global origin.
+    /// This does not execute I/O or guarantee external delivery.
+    pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
         let ordinal = self.next_ordinal;
         self.next_ordinal = self.next_ordinal.checked_add(1).ok_or(Error::Overflow)?;
         self.evaluator.events.push(StagedEvent {
@@ -658,7 +749,7 @@ impl Engine {
         key: Key,
         epoch: impl Fn(&T) -> u64 + 'static,
     ) -> Result<(), Error> {
-        if !self.world.live.is_empty() {
+        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
             return Err(Error::LateRegistration);
         }
         let fact = Fact::of::<T>(key);
@@ -668,18 +759,40 @@ impl Engine {
         self.clocks.push(ClockSpec {
             fact,
             validate: Rc::new(move |before, after| {
-                let old = before.get::<T>(key);
-                let new = after.get::<T>(key);
-                match (old, new) {
-                    (None, None) => Ok(()),
-                    (Some(previous), Some(current)) if previous == current => Ok(()),
-                    (Some(previous), Some(current)) if epoch(&current) > epoch(&previous) => Ok(()),
-                    (None, Some(current)) if epoch(&current) > 0 => Ok(()),
-                    _ => Err(Error::InvalidClock),
-                }
+                validate_clock(before.get::<T>(key), after.get::<T>(key), &epoch)
             }),
         });
         Ok(())
+    }
+
+    /// A keyless clock is a typed singleton fact, never a fabricated entity.
+    fn clock_singleton<T: Clone + Eq + 'static>(
+        &mut self,
+        epoch: impl Fn(&T) -> u64 + 'static,
+    ) -> Result<(), Error> {
+        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
+            return Err(Error::LateRegistration);
+        }
+        let fact = Fact::singleton::<T>();
+        if self.clocks.iter().any(|clock| clock.fact == fact) {
+            return Err(Error::DuplicateClock);
+        }
+        self.clocks.push(ClockSpec {
+            fact,
+            validate: Rc::new(move |before, after| {
+                validate_clock(before.singleton::<T>(), after.singleton::<T>(), &epoch)
+            }),
+        });
+        Ok(())
+    }
+
+    /// Register a clock using the same typed scope as computations.
+    pub fn clock_in<S: ClockShape>(
+        &mut self,
+        at: S::At,
+        epoch: impl Fn(&S::Value) -> u64 + 'static,
+    ) -> Result<(), Error> {
+        S::register(self, at, epoch)
     }
 
     /// Register a typed, per-key computation. A given output type has one producer.
@@ -778,26 +891,45 @@ impl Engine {
         });
         result
     }
-    /// Ordered occurrences from the last successful commit, including repeated
-    /// values and multiple producers per key. Ordinals are per (key, event type)
-    /// within this snapshot only; a later successful commit clears the snapshot.
-    pub fn events<T: Clone + 'static>(&self) -> Vec<Occurrence<T>> {
-        let mut ordinals = HashMap::<Key, u32>::new();
+    /// Typed occurrences ordered by producing rule, scope and emission order.
+    /// Keyless and keyed rules retain distinct origins. The snapshot is replaced
+    /// on each successful commit, and preserved unchanged after failed commits.
+    pub fn occurrences<T: Clone + 'static>(&self) -> Vec<ScopedOccurrence<T>> {
+        let mut ordinals = HashMap::<EventOrigin, u32>::new();
         self.events
             .iter()
             .filter_map(|event| {
                 event.value.downcast_ref::<T>().map(|value| {
-                    let TaskAt::Key(source) = event.source.at else {
-                        unreachable!("singleton occurrence rejected at admission");
+                    let source = match event.source.at {
+                        TaskAt::Key(key) => EventOrigin::Key(key),
+                        TaskAt::Singleton => EventOrigin::Global,
                     };
                     let ordinal = ordinals.entry(source).or_insert(0);
-                    let item = Occurrence {
+                    let occurrence = ScopedOccurrence {
                         source,
                         ordinal: *ordinal,
                         value: value.clone(),
                     };
                     *ordinal = ordinal.checked_add(1).expect("event ordinal overflow");
-                    item
+                    occurrence
+                })
+            })
+            .collect()
+    }
+
+    /// Legacy keyed-only occurrence reader, preserved for previous consumers.
+    /// New experiments use occurrences::<T>() to include keyless origins.
+    pub fn events<T: Clone + 'static>(&self) -> Vec<Occurrence<T>> {
+        self.occurrences::<T>()
+            .into_iter()
+            .filter_map(|event| {
+                let EventOrigin::Key(source) = event.source else {
+                    return None;
+                };
+                Some(Occurrence {
+                    source,
+                    ordinal: event.ordinal,
+                    value: event.value,
                 })
             })
             .collect()

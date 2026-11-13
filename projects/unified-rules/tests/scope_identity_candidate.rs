@@ -166,18 +166,28 @@ fn cross_scope_self_cycle_rejects_initial_commit() -> Result<(), Error> {
 }
 
 #[test]
-fn global_occurrences_cannot_claim_a_fictitious_entity_origin() -> Result<(), Error> {
+fn global_occurrences_use_explicit_origin_without_fabricating_a_key() -> Result<(), Error> {
+    use unified_rules::{EventOrigin, ScopedOccurrence};
+
     let mut app = Engine::new();
     app.compute::<One<Temp>>(|cx, ()| {
         cx.emit(Pulse(1))?;
         Ok(Some(Temp(1)))
     })?;
+    app.transact(|_| Ok(()))?;
+    assert_eq!(app.singleton::<Temp>(), Some(Temp(1)));
+    assert!(app.keys().is_empty());
+    assert!(app.events::<Pulse>().is_empty()); // Older keyed-only reader.
     assert_eq!(
-        app.transact(|_| Ok(())),
-        Err(Error::GlobalOccurrenceUnsupported)
+        app.occurrences::<Pulse>(),
+        vec![ScopedOccurrence {
+            source: EventOrigin::Global,
+            ordinal: 0,
+            value: Pulse(1),
+        }]
     );
-    assert_eq!(app.singleton::<Temp>(), None);
-    assert!(app.events::<Pulse>().is_empty());
+    app.transact(|_| Ok(()))?;
+    assert!(app.occurrences::<Pulse>().is_empty());
     Ok(())
 }
 

@@ -130,6 +130,38 @@ coordinates in one registration *form*, not proof that temporal/event/effect
 semantics form a complete unified model. Generic identifier ergonomics,
 concurrent reads and fair Bevy/RunenECS benchmarks remain unqualified.
 
+## Scoped time and occurrence origins — bounded evidence
+
+The same experimental `Engine::compute::<Each<T>|One<T>>` rule path now
+consumes a typed monotonic clock input using `clock_in::<One<Step>>((), epoch)`
+or `clock_in::<Each<Step>>(key, epoch)`. Both shapes use one admission policy
+and the existing transaction/rollback evaluator. Inside rules,
+`ctx.advanced_in::<One<Step>>(())` and
+`ctx.advanced_in::<Each<Step>>(key)` are scoped clock reads.
+Two independent clocks of the same Rust type do not alias.
+
+Events emitted by a keyless rule now have `EventOrigin::Global` rather than
+a fabricated entity ID, and keyed rule events retain `EventOrigin::Key(key)`.
+`Engine::occurrences::<T>()` exposes both origins in deterministic
+rule/key/emission order and preserves repeated same-type values.
+The older `events::<T>()` is deliberately kept **keyed-only for existing
+consumers**; it is not the recommended future event contract.
+A successful no-op transaction clears the previous snapshot; a rejected
+transaction preserves the previous committed snapshot. This is volatile
+in-memory behavior, **not** durable delivery or externally executed effects.
+
+The independently compiled `tests/scope_time_event_candidate.rs` exercises
+keyed movement driven by a keyless clock, keyed and keyless events of the
+same type, independent clocks sharing one Rust type, monotonic admission,
+duplicate registration, rollback **after events are staged**, and a 64-step
+24-object independent movement oracle. Existing consumers continue unchanged.
+
+**Remaining architectural blocker:** clock admission is still special input
+metadata, and the computation task identity has no full temporal coordinate.
+External effect submission, acknowledgments, retries, cancellation, replay,
+owned/borrowed storage, incremental collections and concurrency remain
+unproven. A two-origin event type is not itself a general effects model.
+
 ## Reproduce
 
 ```sh

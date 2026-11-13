@@ -126,6 +126,31 @@ PRIMITIVE**, but candidate C is not an accepted frontend or a universal API.
 RULE-07 remains **HOLD** until time, events and effects can fit one coherent
 contract and a fair Bevy comparison is compiled and benchmarked.
 
+## D — scoped time and in-memory occurrence origin
+
+The next bounded experiment retains one `compute::<Each<T>|One<T>>`
+registration and adds scoped clock *input admission* (keyed or keyless) and
+an explicit typed occurrence origin (`Key(Key)` or `Global`). No fake
+clock entity exists for keyless time. A global rule can emit occurrences
+without claiming to originate at an entity, and an event type can appear
+from both keyed and keyless producers in one deterministic commit snapshot.
+
+The independently compiled consumer proves clock admission and invalid-step
+rejection for both scopes, isolation of two clocks with the same Rust type,
+keyless clock-driven movement and events, duplicate same-event emissions,
+failed transaction preserving the prior event snapshot, successful no-op
+clearing it, unregistered clock rejection, and a 64-epoch/24-object independent
+arithmetic oracle.
+
+**Limit, not GO:** `Engine::occurrences` is commit-local observation, not an
+effect queue with acknowledgment or retry. The older `Engine::events`
+remains keyed-only for compatibility; the final developer contract must
+choose one consistent event interface instead of retaining two. Clock input
+registration still has separate metadata from rules, tasks do not carry
+explicit epoch coordinates, callbacks remain impure, and effects cannot be
+made exactly-once by the transactional calculation model alone. No fair
+Bevy/RunenECS benchmark or full API selection follows from these tests.
+
 ## Mandatory next API architecture gate
 
 Candidate C now establishes **keyed versus keyless computation identity** in
