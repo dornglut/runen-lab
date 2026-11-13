@@ -254,6 +254,32 @@ struct StagedEvent {
     value: Box<dyn Any>,
 }
 
+/// A process-local monotonic ID allocated only when a request commits.
+/// It is NOT stable across engine recreation or a process restart.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct EffectId(u64);
+
+/// Typed pending effect request. Reading this does NOT submit external work.
+/// The consumer must execute externally and explicitly acknowledge its ID.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectRequest<T> {
+    pub id: EffectId,
+    pub origin: EventOrigin,
+    pub value: T,
+}
+
+struct StagedRequest {
+    source: Task,
+    ordinal: u32,
+    value: Box<dyn Any>,
+}
+
+struct CommittedRequest {
+    id: EffectId,
+    source: Task,
+    value: Box<dyn Any>,
+}
+
 type ClockValidator = dyn Fn(&World, &World) -> Result<(), Error>;
 struct ClockSpec {
     fact: Fact,
@@ -446,6 +472,7 @@ struct Evaluator<'r> {
     by_type: &'r HashMap<(TypeId, ProducerScope), usize>,
     clocks: &'r [ClockSpec],
     events: Vec<StagedEvent>,
+    requests: Vec<StagedRequest>,
     invalidated: BTreeSet<Task>,
     done: BTreeSet<Task>,
     visiting: BTreeSet<Task>,
@@ -509,6 +536,7 @@ impl Evaluator<'_> {
                 reads: &mut reads,
                 task,
                 next_ordinal: 0,
+                next_request_ordinal: 0,
             },
             task.at,
         );
@@ -525,6 +553,7 @@ pub struct RuleCx<'e, 'r> {
     reads: &'e mut HashSet<Fact>,
     task: Task,
     next_ordinal: u32,
+    next_request_ordinal: u32,
 }
 impl RuleCx<'_, '_> {
     pub fn exists(&mut self, key: Key) -> bool {
@@ -650,6 +679,26 @@ impl RuleCx<'_, '_> {
         });
         Ok(())
     }
+
+    /// Stage a post-commit effect request, never execute the effect itself.
+    ///
+    /// On failure the request is discarded with the proposed world. On
+    /// success it receives a process-local unique EffectId and remains
+    /// pending across later commits until explicitly acknowledged.
+    /// Callbacks remain arbitrary Rust and can still perform unsafe I/O.
+    pub fn request<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
+        let ordinal = self.next_request_ordinal;
+        self.next_request_ordinal = self
+            .next_request_ordinal
+            .checked_add(1)
+            .ok_or(Error::Overflow)?;
+        self.evaluator.requests.push(StagedRequest {
+            source: self.task,
+            ordinal,
+            value: Box::new(value),
+        });
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -659,6 +708,10 @@ pub struct Engine {
     by_type: HashMap<(TypeId, ProducerScope), usize>,
     clocks: Vec<ClockSpec>,
     events: Vec<StagedEvent>,
+    // A memory-only outbox separate from the per-commit event snapshot.
+    // Neither submission nor reliable persistence is provided here.
+    pending_requests: Vec<CommittedRequest>,
+    next_request_id: u64,
     dependencies: HashMap<Task, HashSet<Fact>>,
     reverse: HashMap<Fact, BTreeSet<Task>>,
     insertions: HashSet<Fact>,
@@ -932,6 +985,33 @@ impl Engine {
             .collect()
     }
 
+    /// Snapshot all unacknowledged requests of one concrete type.
+    /// Reads are replayable, not automatic delivery or claim/lease operations.
+    pub fn pending_effects<T: Clone + 'static>(&self) -> Vec<EffectRequest<T>> {
+        self.pending_requests
+            .iter()
+            .filter_map(|request| {
+                request.value.downcast_ref::<T>().map(|value| EffectRequest {
+                    id: request.id,
+                    origin: match request.source.at {
+                        TaskAt::Key(key) => EventOrigin::Key(key),
+                        TaskAt::Singleton => EventOrigin::Global,
+                    },
+                    value: value.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// Explicit in-memory acknowledgment after the consumer handles a request.
+    /// Unknown / previously acknowledged IDs are harmless false returns.
+    /// Persistence, leases and crash-safe exactly-once delivery are NOT proven.
+    pub fn acknowledge_effect(&mut self, id: EffectId) -> bool {
+        let previous = self.pending_requests.len();
+        self.pending_requests.retain(|request| request.id != id);
+        self.pending_requests.len() != previous
+    }
+
     pub fn last_evaluations(&self) -> usize {
         self.last_evaluations
     }
@@ -1024,6 +1104,7 @@ impl Engine {
             by_type: &self.by_type,
             clocks: &self.clocks,
             events: Vec::new(),
+            requests: Vec::new(),
             invalidated,
             done: BTreeSet::new(),
             visiting: BTreeSet::new(),
@@ -1075,15 +1156,32 @@ impl Engine {
             insertions,
             output_changes,
             mut events,
+            mut requests,
             ..
         } = evaluator;
         events.sort_by_key(|event| (event.source, event.ordinal));
+        requests.sort_by_key(|request| (request.source, request.ordinal));
+
+        // Allocate IDs on the proposed commit only. Exhaustion rejects the
+        // entire state update; it can never publish partially numbered work.
+        let mut sequence = self.next_request_id;
+        let mut committed_requests = Vec::with_capacity(requests.len());
+        for request in requests {
+            sequence = sequence.checked_add(1).ok_or(Error::Overflow)?;
+            committed_requests.push(CommittedRequest {
+                id: EffectId(sequence),
+                source: request.source,
+                value: request.value,
+            });
+        }
         self.world = next_world;
         self.dependencies = dependencies;
         self.reverse = reverse;
         self.insertions = insertions;
         self.output_changes = output_changes;
         self.events = events;
+        self.pending_requests.extend(committed_requests);
+        self.next_request_id = sequence;
         self.last_evaluations = evaluations;
         self.committed_once = true;
         for (rule, spec) in self.rules.iter().enumerate() {

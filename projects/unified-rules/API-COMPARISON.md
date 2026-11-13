@@ -154,6 +154,36 @@ explicit epoch coordinates, callbacks remain impure, and effects cannot be
 made exactly-once by the transactional calculation model alone. No fair
 Bevy/RunenECS benchmark or full API selection follows from these tests.
 
+## E — retained post-commit effect requests, NOT execution or durability
+
+`RuleCx::request(T)` stages a typed request during evaluation; the runtime
+does **not** execute it. The request is assigned a unique **process-local**
+`EffectId` only after all rules succeed, and retained in a memory-only
+outbox across later commits. A consumer can read `pending_effects::<T>()`,
+execute I/O outside the transaction and explicitly call
+`acknowledge_effect(id)`. A rejected transaction stages no new committed
+work and consumes no IDs. Acknowledging twice returns false on the second
+attempt, while deleting a source entity does not silently discard work.
+
+**Critical falsification:** rules remain ordinary `Fn` closures and can do
+uncontrolled I/O themselves. The negative oracle intentionally mutates
+`Rc<Cell<u32>>` in a rule, then rejects the transaction later: the
+observable external counter has already changed. The engine cannot claim
+pure callbacks, transactionally isolated I/O, or external exactly-once
+execution. This is a **request-protocol experiment**, not a reliability
+or concurrency implementation.
+
+**Remaining delivery gap:** IDs and pending entries are lost at process
+restart; there is no stable cross-run identity, persisted queue, transport
+or retries/leases. The consumer might submit a command and crash before
+the acknowledgment, so duplicate external operations are possible.
+The no-op `Engine::acknowledge_effect` status flag has no transaction
+or durable correlation semantics, and attempts/cancellation still need a
+separate authority decision. One coherent rule *computation* registration
+is retained, but authoring commands remains an explicit state/effect
+distinction. This distinction is necessary, not automatically a hybrid
+scheduler API.
+
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in

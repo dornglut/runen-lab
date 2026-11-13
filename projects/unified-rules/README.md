@@ -168,6 +168,32 @@ External effect submission, acknowledgments, retries, cancellation, replay,
 owned/borrowed storage, incremental collections and concurrency remain
 unproven. A two-origin event type is not itself a general effects model.
 
+## Post-commit effect request outbox — bounded negative and positive proof
+
+Unlike ephemeral `emit` occurrences, `ctx.request(T)` stages an effect
+**request** with no external execution inside the engine. Only after all
+rule evaluation succeeds does the engine allocate a strictly increasing
+process-local `EffectId` and retain the typed command. Clients can inspect
+`pending_effects::<T>()` and `acknowledge_effect(id)` after handling a
+request. Unacknowledged commands survive successful no-op or unrelated
+transactions and deletion of their originating record. A failed transaction
+neither publishes new requests nor consumes sequence numbers.
+
+**Strict limitations:** This is a **volatile in-memory outbox**, not durable
+event sourcing. The external consumer determines when I/O is executed;
+an error after submission and before acknowledgment may cause a duplicate
+on retry. Acknowledgment may be lost after a crash, IDs restart with a new
+engine instance, and there are no leases, retry scheduling, cancellation,
+persistence or transport adapters. A test *demonstrates* that arbitrary Rust
+callback I/O cannot be rolled back: using `Rc<Cell<_>>` inside a rule can
+change external state before a later rule rejects the transaction. The
+`request` API is therefore a safer path, not an enforced purity guarantee.
+
+The independently compiling `tests/effect_request_candidate.rs` probes
+multiple keyed/global effect producers, typed filtering, distinct IDs,
+retention until explicit acknowledgment, no-op behavior, deletion, rollback
+and the deliberate direct-side-effect negative oracle.
+
 ## Reproduce
 
 ```sh
