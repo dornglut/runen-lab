@@ -6,15 +6,22 @@ The repository is intentionally **not** a framework, specification, or cross-fra
 
 ## Maturity
 
-Runen Lab is currently **planned**. The repository establishes authority and validation before admitting its first Lab project.
+Runen Lab has an independent downstream PCG inspector project. Its experimental D3
+viewer is available for local exploration with an offline pinned D3 build.
+Project acceptance remains subject to reviewed exact-head CI and browser proof.
 
-No Lab project is accepted yet, and this repository does not imply that planned Runen frameworks are externally consumable before their owning extraction/release gates are accepted.
+Projects exercise accepted framework APIs but do not thereby establish framework
+support or consumer-release claims.
 
-## Project model
+## Projects
 
-Future projects are independently runnable downstream applications under `projects/` by default. A project may be exploratory or curated, direct-framework or Runenwerk-integrated, and highly visual or interactive.
+- [PCG Graph Inspector](projects/pcg-inspector/README.md) — inspect generated
+  graph topology using D3 forces. Launch with `cargo pcg-inspector`; export
+  real RunenPCG candidates using `cargo pcg-inspector generate`.
 
-Projects do not become framework acceptance authority merely because they exercise a framework successfully. Reusable findings are routed back to the repository that owns the reusable concern.
+Each project has its own scope and prerequisites. Other projects may be
+experimental or curated, direct-framework or Runenwerk-integrated, and highly
+visual or interactive. Source for accepted Runen frameworks remains external.
 
 ## Repository authority
 
