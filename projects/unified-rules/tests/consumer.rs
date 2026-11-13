@@ -378,3 +378,144 @@ fn derived_overflow_rolls_back_source_and_all_derived_outputs() -> Result<(), Er
     assert_eq!(game.get::<WorldPosition>(child), Some(WorldPosition(15)));
     Ok(())
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SpawnPosition(i64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Step {
+    epoch: u64,
+    dt: i64,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContactOccurrence(u64);
+
+/// Temporal candidate: *same rule API* as the hierarchy and derived-contact
+/// consumers, but Position itself is rule-owned and reads the prior commit.
+/// An external Step is a typed input change; no promote/copy is needed.
+fn temporal_game() -> Engine {
+    let mut game = Engine::new();
+    game.rule::<Position>(|ctx, entity| {
+        let Some(SpawnPosition(start)) = ctx.get::<SpawnPosition>(entity)? else {
+            return Ok(None);
+        };
+        let Some(Velocity(velocity)) = ctx.get::<Velocity>(entity)? else {
+            return Ok(None);
+        };
+        let before = ctx.previous::<Position>(entity).unwrap_or(Position(start));
+        let Some(step) = ctx.get::<Step>(CLOCK)? else {
+            return Ok(Some(before));
+        };
+        if ctx.previous::<Position>(entity).is_none()
+            || ctx.previous::<Step>(CLOCK).is_some_and(|prior| prior.epoch == step.epoch)
+        {
+            return Ok(Some(before));
+        }
+        let delta = velocity.checked_mul(step.dt).ok_or(Error::Overflow)?;
+        Ok(Some(Position(before.0.checked_add(delta).ok_or(Error::Overflow)?)))
+    }).unwrap();
+    game.rule::<ContactOccurrence>(|ctx, entity| {
+        let Some(Contact(true)) = ctx.get::<Contact>(entity)? else {
+            return Ok(None);
+        };
+        let Some(step) = ctx.get::<Step>(CLOCK)? else {
+            return Ok(None);
+        };
+        let previous = ctx.previous::<ContactOccurrence>(entity);
+        if ctx.changed::<Step>(CLOCK)?.is_some() || previous.is_none() {
+            Ok(Some(ContactOccurrence(step.epoch)))
+        } else {
+            Ok(previous)
+        }
+    }).unwrap();
+    game
+}
+
+#[test]
+fn temporal_rule_moves_without_promote_and_emits_repeated_typed_occurrences() -> Result<(), Error> {
+    use unified_rules::OutputChange;
+
+    let mut world = temporal_game();
+    let player = Key::new(1, 1);
+    let enemy = Key::new(2, 1);
+    world.transact(|tx| {
+        tx.spawn(CLOCK)?;
+        tx.spawn(player)?;
+        tx.spawn(enemy)?;
+        tx.put(player, SpawnPosition(10))?;
+        tx.put(player, Velocity(3))?;
+        tx.put(enemy, Contact(true))?;
+        Ok(())
+    })?;
+    assert_eq!(world.get::<Position>(player), Some(Position(10)));
+    assert!(world.changes::<ContactOccurrence>().is_empty());
+
+    world.transact(|tx| tx.put(CLOCK, Step { epoch: 1, dt: 2 }))?;
+    assert_eq!(world.get::<Position>(player), Some(Position(16)));
+    assert_eq!(world.changes::<ContactOccurrence>(), vec![
+        OutputChange::Added(enemy, ContactOccurrence(1))
+    ]);
+
+    world.transact(|_| Ok(()))?;
+    assert!(world.changes::<ContactOccurrence>().is_empty());
+    world.transact(|tx| tx.put(player, Velocity(4)))?;
+    // Editing velocity without a new step must not move the player.
+    assert_eq!(world.get::<Position>(player), Some(Position(16)));
+    assert!(world.changes::<Position>().is_empty());
+
+    world.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 2 }))?;
+    assert_eq!(world.get::<Position>(player), Some(Position(24)));
+    assert_eq!(world.changes::<ContactOccurrence>(), vec![
+        OutputChange::Updated(enemy, ContactOccurrence(2))
+    ]);
+
+    world.transact(|tx| tx.put(enemy, Contact(false)))?;
+    assert_eq!(world.changes::<ContactOccurrence>(), vec![
+        OutputChange::Removed(enemy)
+    ]);
+
+    // A failed timestep must not advance state or expose event changes.
+    assert_eq!(
+        world.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: i64::MAX })),
+        Err(Error::Overflow)
+    );
+    assert_eq!(world.get::<Position>(player), Some(Position(24)));
+    assert_eq!(world.get::<Step>(CLOCK), Some(Step { epoch: 2, dt: 2 }));
+    assert_eq!(world.changes::<ContactOccurrence>(), vec![
+        OutputChange::Removed(enemy)
+    ]);
+
+    world.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: 2 }))?;
+    assert_eq!(world.get::<Position>(player), Some(Position(32)));
+    world.transact(|tx| tx.put(enemy, Contact(true)))?;
+    assert_eq!(world.changes::<ContactOccurrence>(), vec![
+        OutputChange::Added(enemy, ContactOccurrence(3))
+    ]);
+    Ok(())
+}
+
+#[test]
+fn temporal_rules_follow_independent_fixed_step_oracle() -> Result<(), Error> {
+    let mut world = temporal_game();
+    let mut expected = [0_i64; 64];
+    world.transact(|tx| {
+        tx.spawn(CLOCK)?;
+        for (index, value) in expected.iter_mut().enumerate() {
+            let key = Key::new(index as u32 + 1, 1);
+            *value = index as i64 * 3;
+            tx.spawn(key)?;
+            tx.put(key, SpawnPosition(*value))?;
+            tx.put(key, Velocity(index as i64 % 5))?;
+        }
+        Ok(())
+    })?;
+    for epoch in 1..=32_u64 {
+        let dt = i64::try_from(epoch % 3 + 1).map_err(|_| Error::Overflow)?;
+        world.transact(|tx| tx.put(CLOCK, Step { epoch, dt }))?;
+        for (index, value) in expected.iter_mut().enumerate() {
+            *value += (index as i64 % 5) * dt;
+            assert_eq!(world.get::<Position>(Key::new(index as u32 + 1, 1)),
+                Some(Position(*value)), "step {epoch}, key {index}");
+        }
+    }
+    Ok(())
+}

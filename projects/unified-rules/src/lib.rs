@@ -120,6 +120,22 @@ impl Fact {
 }
 struct Exists;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChangeKind {
+    Added,
+    Updated,
+    Removed,
+}
+
+/// Change to a cached typed output in the latest successful transaction.
+/// A change is not a durable, acknowledged external event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OutputChange<T> {
+    Added(Key, T),
+    Updated(Key, T),
+    Removed(Key),
+}
+
 pub struct Transaction<'a> {
     world: &'a mut World,
     changed: &'a mut HashSet<Fact>,
@@ -196,6 +212,7 @@ struct Rule {
 
 struct Evaluator<'r> {
     world: World,
+    previous: &'r World,
     rules: &'r [Rule],
     by_type: &'r HashMap<TypeId, usize>,
     invalidated: BTreeSet<Task>,
@@ -203,6 +220,7 @@ struct Evaluator<'r> {
     visiting: BTreeSet<Task>,
     dependencies: HashMap<Task, HashSet<Fact>>,
     insertions: HashSet<Fact>,
+    output_changes: HashMap<Fact, ChangeKind>,
 }
 impl Evaluator<'_> {
     fn evaluate(&mut self, task: Task) -> Result<(), Error> {
@@ -249,6 +267,26 @@ impl RuleCx<'_, '_> {
         }
         Ok(self.evaluator.world.get::<T>(key))
     }
+
+    /// The previous committed value. This is a temporal edge, not a
+    /// same-transaction dependency: it cannot create an immediate rule cycle.
+    pub fn previous<T: Clone + Eq + 'static>(&self, key: Key) -> Option<T> {
+        self.evaluator.previous.get::<T>(key)
+    }
+
+    /// Read a current value (tracking it) only when it differs from the
+    /// previous committed value. Removal returns None, not a value.
+    pub fn changed<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+    ) -> Result<Option<T>, Error> {
+        let current = self.get::<T>(key)?;
+        Ok(if current != self.previous::<T>(key) {
+            current
+        } else {
+            None
+        })
+    }
 }
 
 #[derive(Default)]
@@ -259,6 +297,7 @@ pub struct Engine {
     dependencies: HashMap<Task, HashSet<Fact>>,
     reverse: HashMap<Fact, BTreeSet<Task>>,
     insertions: HashSet<Fact>,
+    output_changes: HashMap<Fact, ChangeKind>,
     last_evaluations: usize,
 }
 
@@ -285,8 +324,18 @@ impl Engine {
         let callback = move |ctx: &mut RuleCx<'_, '_>, key: Key| {
             let value = f(ctx, key)?;
             let previously = ctx.evaluator.world.get::<T>(key);
-            if previously.is_none() && value.is_some() {
-                ctx.evaluator.insertions.insert(Fact::of::<T>(key));
+            if previously != value {
+                let kind = match (previously.is_some(), value.is_some()) {
+                    (false, true) => ChangeKind::Added,
+                    (true, true) => ChangeKind::Updated,
+                    (true, false) => ChangeKind::Removed,
+                    (false, false) => unreachable!("unequal missing values"),
+                };
+                let fact = Fact::of::<T>(key);
+                if kind == ChangeKind::Added {
+                    ctx.evaluator.insertions.insert(fact);
+                }
+                ctx.evaluator.output_changes.insert(fact, kind);
             }
             ctx.evaluator.world.set::<T>(key, value);
             Ok(())
@@ -314,6 +363,25 @@ impl Engine {
             .collect();
         items.sort_by_key(|(key, _)| *key);
         items
+    }
+    /// Added, modified and removed output values from the last successful
+    /// transaction, ordered by generational key. Only one delta per key.
+    pub fn changes<T: Clone + Eq + 'static>(&self) -> Vec<OutputChange<T>> {
+        let mut result: Vec<_> = self.output_changes.iter()
+            .filter(|(fact, _)| fact.ty == TypeId::of::<T>())
+            .filter_map(|(fact, kind)| match kind {
+                ChangeKind::Added => self.get::<T>(fact.key)
+                    .map(|value| OutputChange::Added(fact.key, value)),
+                ChangeKind::Updated => self.get::<T>(fact.key)
+                    .map(|value| OutputChange::Updated(fact.key, value)),
+                ChangeKind::Removed => Some(OutputChange::Removed(fact.key)),
+            })
+            .collect();
+        result.sort_by_key(|change| match change {
+            OutputChange::Added(key, _) | OutputChange::Updated(key, _)
+                | OutputChange::Removed(key) => *key,
+        });
+        result
     }
     pub fn last_evaluations(&self) -> usize {
         self.last_evaluations
@@ -364,6 +432,7 @@ impl Engine {
         // recursively, and reject dynamic cycles before commit.
         let mut evaluator = Evaluator {
             world: proposed,
+            previous: &self.world,
             rules: &self.rules,
             by_type: &self.by_type,
             invalidated,
@@ -371,6 +440,7 @@ impl Engine {
             visiting: BTreeSet::new(),
             dependencies: HashMap::new(),
             insertions: HashSet::new(),
+            output_changes: HashMap::new(),
         };
         let tasks: Vec<_> = evaluator.invalidated.iter().copied().collect();
         for task in tasks {
@@ -396,6 +466,7 @@ impl Engine {
         self.dependencies = dependencies;
         self.reverse = reverse;
         self.insertions = evaluator.insertions;
+        self.output_changes = evaluator.output_changes;
         self.last_evaluations = evaluations;
         Ok(())
     }
