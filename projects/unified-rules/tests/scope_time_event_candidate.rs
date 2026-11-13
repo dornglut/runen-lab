@@ -3,7 +3,10 @@
 use unified_rules::{Each, Engine, Error, EventOrigin, Key, Occurrence, One, ScopedOccurrence};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Step { epoch: u64, dt: i64 }
+struct Step {
+    epoch: u64,
+    dt: i64,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Seed(i64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,7 +24,10 @@ struct KeyEpoch(u64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rejected;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Pulse { epoch: u64, kind: u8 }
+struct Pulse {
+    epoch: u64,
+    kind: u8,
+}
 
 const CLOCK_ROW: Key = Key::new(0, 1);
 const FIRST: Key = Key::new(1, 1);
@@ -38,8 +44,14 @@ fn scoped_game() -> Result<Engine, Error> {
         let Some(step) = cx.advanced_in::<One<Step>>(())? else {
             return Ok(cx.previous_singleton::<GlobalEpoch>());
         };
-        cx.emit(Pulse { epoch: step.epoch, kind: 0 })?;
-        cx.emit(Pulse { epoch: step.epoch, kind: 1 })?;
+        cx.emit(Pulse {
+            epoch: step.epoch,
+            kind: 0,
+        })?;
+        cx.emit(Pulse {
+            epoch: step.epoch,
+            kind: 1,
+        })?;
         Ok(Some(GlobalEpoch(step.epoch)))
     })?;
 
@@ -60,7 +72,9 @@ fn scoped_game() -> Result<Engine, Error> {
             return Ok(Some(previous));
         }
         let movement = velocity.checked_mul(step.dt).ok_or(Error::Overflow)?;
-        Ok(Some(Position(previous.0.checked_add(movement).ok_or(Error::Overflow)?)))
+        Ok(Some(Position(
+            previous.0.checked_add(movement).ok_or(Error::Overflow)?,
+        )))
     })?;
 
     // Rule 2: keyed event producer, sharing one occurrence type with Rule 0.
@@ -71,7 +85,10 @@ fn scoped_game() -> Result<Engine, Error> {
         let Some(step) = cx.advanced_in::<One<Step>>(())? else {
             return Ok(cx.previous::<ContactAt>(key));
         };
-        cx.emit(Pulse { epoch: step.epoch, kind: 2 })?;
+        cx.emit(Pulse {
+            epoch: step.epoch,
+            kind: 2,
+        })?;
         Ok(Some(ContactAt(step.epoch)))
     })?;
 
@@ -80,12 +97,17 @@ fn scoped_game() -> Result<Engine, Error> {
         if let Some(step) = cx.advanced_in::<Each<Step>>(CLOCK_ROW)? {
             return Ok(Some(KeyEpoch(step.epoch)));
         }
-        Ok(Some(cx.previous_singleton::<KeyEpoch>().unwrap_or(KeyEpoch(0))))
+        Ok(Some(
+            cx.previous_singleton::<KeyEpoch>().unwrap_or(KeyEpoch(0)),
+        ))
     })?;
 
     // Rule 4: failure after both event producers, to test atomic publication.
     app.compute::<One<Rejected>>(|cx, ()| {
-        if cx.advanced_in::<One<Step>>(())?.is_some_and(|step| step.epoch == 3) {
+        if cx
+            .advanced_in::<One<Step>>(())?
+            .is_some_and(|step| step.epoch == 3)
+        {
             return Err(Error::Overflow);
         }
         Ok(None)
@@ -174,7 +196,10 @@ fn keyless_clock_moves_keyed_state_and_preserves_typed_event_origins() -> Result
 #[test]
 fn multiple_scoped_clock_admission_and_negative_cases() -> Result<(), Error> {
     let mut app = scoped_game()?;
-    assert_eq!(app.clock_in::<One<Step>>((), |v| v.epoch), Err(Error::DuplicateClock));
+    assert_eq!(
+        app.clock_in::<One<Step>>((), |v| v.epoch),
+        Err(Error::DuplicateClock)
+    );
     assert_eq!(
         app.clock_in::<Each<Step>>(CLOCK_ROW, |v| v.epoch),
         Err(Error::DuplicateClock)
@@ -223,7 +248,9 @@ fn multiple_scoped_clock_admission_and_negative_cases() -> Result<(), Error> {
 fn missing_clock_registration_fails_a_keyless_computation_without_commit() -> Result<(), Error> {
     let mut app = Engine::new();
     app.compute::<One<GlobalEpoch>>(|cx, ()| {
-        Ok(cx.advanced_in::<One<Step>>(())?.map(|v| GlobalEpoch(v.epoch)))
+        Ok(cx
+            .advanced_in::<One<Step>>(())?
+            .map(|v| GlobalEpoch(v.epoch)))
     })?;
     assert_eq!(app.transact(|_| Ok(())), Err(Error::UnregisteredClock));
     assert_eq!(app.singleton::<GlobalEpoch>(), None);
@@ -235,8 +262,12 @@ fn independent_time_oracle_over_many_epochs_and_edits() -> Result<(), Error> {
     let mut app = Engine::new();
     app.clock_in::<One<Step>>((), |step| step.epoch)?;
     app.compute::<Each<Position>>(|cx, key| {
-        let Some(Seed(start)) = cx.get::<Seed>(key)? else { return Ok(None) };
-        let Some(Velocity(speed)) = cx.get::<Velocity>(key)? else { return Ok(None) };
+        let Some(Seed(start)) = cx.get::<Seed>(key)? else {
+            return Ok(None);
+        };
+        let Some(Velocity(speed)) = cx.get::<Velocity>(key)? else {
+            return Ok(None);
+        };
         let before = cx.previous::<Position>(key).unwrap_or(Position(start));
         let Some(step) = cx.advanced_in::<One<Step>>(())? else {
             return Ok(Some(before));
@@ -245,9 +276,10 @@ fn independent_time_oracle_over_many_epochs_and_edits() -> Result<(), Error> {
             return Ok(Some(before));
         }
         Ok(Some(Position(
-            before.0.checked_add(
-                speed.checked_mul(step.dt).ok_or(Error::Overflow)?
-            ).ok_or(Error::Overflow)?
+            before
+                .0
+                .checked_add(speed.checked_mul(step.dt).ok_or(Error::Overflow)?)
+                .ok_or(Error::Overflow)?,
         )))
     })?;
 

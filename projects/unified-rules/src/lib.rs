@@ -461,10 +461,7 @@ pub trait ClockShape: OutputShape {
         at: Self::At,
         epoch: impl Fn(&Self::Value) -> u64 + 'static,
     ) -> Result<(), Error>;
-    fn advanced(
-        cx: &mut RuleCx<'_, '_>,
-        at: Self::At,
-    ) -> Result<Option<Self::Value>, Error>;
+    fn advanced(cx: &mut RuleCx<'_, '_>, at: Self::At) -> Result<Option<Self::Value>, Error>;
 }
 
 impl<T: Clone + Eq + 'static> ClockShape for Each<T> {
@@ -619,10 +616,7 @@ impl RuleCx<'_, '_> {
     }
 
     /// Read a changed monotonic clock through its typed scope.
-    pub fn advanced_in<S: ClockShape>(
-        &mut self,
-        at: S::At,
-    ) -> Result<Option<S::Value>, Error> {
+    pub fn advanced_in<S: ClockShape>(&mut self, at: S::At) -> Result<Option<S::Value>, Error> {
         S::advanced(self, at)
     }
 
