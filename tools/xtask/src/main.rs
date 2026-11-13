@@ -16,6 +16,9 @@ const REQUIRED_FILES: &[&str] = &[
     ".github/workflows/validate.yml",
     "tools/xtask/Cargo.toml",
     "tools/xtask/src/main.rs",
+    "projects/todo/Cargo.toml",
+    "projects/todo/Cargo.lock",
+    "projects/todo/src/main.rs",
     "projects/pcg-inspector/README.md",
     "projects/pcg-inspector/index.html",
     "projects/pcg-inspector/styles.css",
@@ -152,11 +155,54 @@ fn validate() -> Result<(), String> {
             "warnings",
         ],
     )?;
+    // Windows installs npm as npm.cmd; Command::new("npm") does not
+    // resolve that command script without explicitly naming its extension.
+    let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     run(
         &root,
-        "npm",
+        npm,
         &["run", "check", "--prefix", "projects/pcg-inspector"],
     )?;
+    // The independent Todo project is not in the root Cargo workspace.
+    // Validate its exact committed lockfile and all application targets explicitly.
+    const TODO: &str = "projects/todo/Cargo.toml";
+    run(
+        &root,
+        "cargo",
+        &[
+            "metadata",
+            "--manifest-path",
+            TODO,
+            "--locked",
+            "--format-version=1",
+            "--no-deps",
+        ],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &["fmt", "--manifest-path", TODO, "--", "--check"],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &["test", "--manifest-path", TODO, "--all-targets", "--locked"],
+    )?;
+    run(
+        &root,
+        "cargo",
+        &[
+            "clippy",
+            "--manifest-path",
+            TODO,
+            "--all-targets",
+            "--locked",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+
     run(&root, "git", &["diff", "--check"])?;
 
     let after = git_status(&root)?;

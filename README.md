@@ -15,6 +15,8 @@ support or consumer-release claims.
 
 ## Projects
 
+- [Desktop Todo](projects/todo/README.md) — independent Runenwerk task manager
+  with durable storage. Native acceptance is pending in the draft delivery.
 - [PCG Graph Inspector](projects/pcg-inspector/README.md) — inspect generated
   graph topology using D3 forces. Launch with `cargo pcg-inspector`; export
   real RunenPCG candidates using `cargo pcg-inspector generate`.

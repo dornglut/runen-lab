@@ -20,7 +20,8 @@ The repository-owned command verifies:
 4. root workspace formatting, locked all-target tests and Clippy with warnings denied;
 5. PCG inspector's independently locked Rust exporter formatting, tests and Clippy;
 6. JavaScript syntax, vendored D3 SHA-256/license integrity, and Node built-in graph-data/HTTP server tests using `npm run check`;
-7. Git diff hygiene and checkout-state preservation.
+7. Todo's independently locked Cargo metadata, formatting, all-target tests and strict Clippy;
+8. Git diff hygiene and checkout-state preservation.
 
 The PCG inspector's Rust project uses the exact accepted RunenPCG Git revision.
 Its consumer tests do not claim historical Runenwerk replay.

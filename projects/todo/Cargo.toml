@@ -1,0 +1,23 @@
+[package]
+name = "todo"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[dependencies]
+engine = { git = "https://github.com/dornglut/runenwerk", rev = "b4683b99939464c3bc79e85f04c752687f01bc86", version = "0.1.0" }
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+runenui_core = { git = "https://github.com/dornglut/runen-ui", rev = "861be3bedadd56e1db30f7e13bfdaafe2f2c95fd", version = "0.1.0" }
+
+[dev-dependencies]
+runenui_runtime = { git = "https://github.com/dornglut/runen-ui", rev = "861be3bedadd56e1db30f7e13bfdaafe2f2c95fd", version = "0.1.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_lifetimes = "deny"
+unused_qualifications = "deny"
+
+[workspace]
+resolver = "3"
