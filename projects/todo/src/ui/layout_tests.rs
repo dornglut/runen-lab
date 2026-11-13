@@ -273,10 +273,8 @@ fn short_viewport_scrolls_with_original_runenui_wheel_input() {
         LogicalDelta, LogicalPoint, PointerDeviceKind, PointerEvent, PointerId, PointerPhase,
     };
 
-    let path = std::env::temp_dir().join(format!(
-        "runen-lab-todo-wheel-{}.json",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("runen-lab-todo-wheel-{}.json", std::process::id()));
     assert!(!path.exists(), "wheel fixture must be isolated");
     let storage = TodoStorage::at(path.clone());
     let mut service = TodoService::at(storage).unwrap();
@@ -296,10 +294,7 @@ fn short_viewport_scrolls_with_original_runenui_wheel_input() {
         )
         .unwrap();
     let style = runenui_core::StyleEnvironment::default();
-    let build = SurfaceBuildContext::tight(
-        &style,
-        LogicalSize::try_new(320.0, 400.0).unwrap(),
-    );
+    let build = SurfaceBuildContext::tight(&style, LogicalSize::try_new(320.0, 400.0).unwrap());
     let publication = runtime.publish_surface(&build).unwrap();
     let root_id = publication.frame().root().unwrap().id().clone();
     let layout = publication.layout_report().root().unwrap();
