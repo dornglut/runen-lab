@@ -464,11 +464,19 @@ impl Engine {
                 reverse.entry(fact).or_default().insert(task);
             }
         }
-        self.world = evaluator.world;
+        // Move the staged results out of the evaluator before replacing
+        // the prior World it borrowed for temporal reads.
+        let Evaluator {
+            world: next_world,
+            insertions,
+            output_changes,
+            ..
+        } = evaluator;
+        self.world = next_world;
         self.dependencies = dependencies;
         self.reverse = reverse;
-        self.insertions = evaluator.insertions;
-        self.output_changes = evaluator.output_changes;
+        self.insertions = insertions;
+        self.output_changes = output_changes;
         self.last_evaluations = evaluations;
         Ok(())
     }
