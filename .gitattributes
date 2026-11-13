@@ -1,0 +1,2 @@
+# Keep the integrity-checked D3 distribution byte-identical on every checkout.
+projects/pcg-inspector/vendor/d3.v7.9.0.min.js text eol=lf
