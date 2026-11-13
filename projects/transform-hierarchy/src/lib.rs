@@ -229,10 +229,10 @@ impl Scene {
         let mut affected = BTreeSet::new();
         let mut stack: Vec<u32> = touched.iter().copied().collect();
         while let Some(slot) = stack.pop() {
-            if affected.insert(slot) {
-                if let Some(children) = candidate.children.get(&slot) {
-                    stack.extend(children.iter().copied());
-                }
+            if affected.insert(slot)
+                && let Some(children) = candidate.children.get(&slot)
+            {
+                stack.extend(children.iter().copied());
             }
         }
         for &slot in &affected {
