@@ -646,3 +646,120 @@ fn persisted_full_page_mounts_bounded_ui_and_pagination_without_truncating_stora
     assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE + 1);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
+    use runenui_core::{
+        InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
+        PointerEvent, PointerId, PointerPhase,
+    };
+    use runenui_runtime::{
+        InputArbitrationRecord, PumpBudget, RuntimeStatus, UiInputFinality,
+    };
+
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-page-pointer-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "page interaction fixture must start empty");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage.clone()).unwrap();
+    for index in 0..=TASKS_PER_PAGE {
+        service
+            .execute(TodoCommand::Add {
+                title: format!("Task {index}"),
+            })
+            .unwrap();
+    }
+    let state = TodoUiState::new(TodoService::at(storage.clone()).unwrap());
+    let mut runtime = AppRuntime::<TodoUi>::mount(state).unwrap();
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let context = SurfaceBuildContext::tight(
+        &style,
+        LogicalSize::try_new(800.0, 600.0).unwrap(),
+    );
+    let publication = runtime.publish_surface(&context).unwrap();
+    let next = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.page.next")
+        })
+        .expect("the actual Next control is mounted");
+    let bounds = next.bounds();
+    let point = LogicalPoint::new(
+        bounds.x() + bounds.width() / 2.0,
+        bounds.y() + bounds.height() / 2.0,
+    )
+    .unwrap();
+    let surface = publication.input_context().clone();
+    let pointer = PointerId::new(2).unwrap();
+    let device = InputDeviceId::new(11).unwrap();
+
+    for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+        let mut event =
+            PointerEvent::new(pointer, PointerDeviceKind::Mouse, phase, point, surface.clone())
+                .with_device_id(device);
+        if phase == PointerPhase::Down {
+            event = event
+                .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                .with_changed_button(PointerButton::Primary);
+        } else if phase == PointerPhase::Up {
+            event = event.with_changed_button(PointerButton::Primary);
+        }
+        let submitted = runtime
+            .submit_pointer(event)
+            .expect("ordinary Next mouse input is admitted");
+        let batch = runtime
+            .pump(PumpBudget::new(128, 128, 128, 128))
+            .expect("ordinary Next mouse input is observed");
+        assert_eq!(
+            batch.final_ownership().status(),
+            RuntimeStatus::Running,
+            "Next {phase:?} must not poison the running runtime"
+        );
+        assert!(
+            batch.processed_through()
+                .is_some_and(|through| through >= submitted.sequence()),
+            "Next {phase:?} must settle the original input sequence"
+        );
+        let finalities = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(receipt)
+                    if receipt.sequence() == submitted.sequence() =>
+                {
+                    Some(receipt.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(finalities.len(), 1, "Next {phase:?} terminal receipt");
+        assert!(
+            matches!(finalities[0], UiInputFinality::Committed(_)),
+            "Next {phase:?} was not committed: {:?}",
+            finalities[0]
+        );
+    }
+
+    assert_eq!(runtime.state().page_index, 1);
+    assert_eq!(runtime.state().visible_tasks().len(), 1);
+    assert_eq!(runtime.state().visible_tasks()[0].title(), "Task 16");
+    let next_page = runtime.publish_surface(&context).unwrap();
+    assert!(next_page.frame().nodes().iter().any(|node| {
+        node.authored_id()
+            .is_some_and(|id| id.as_str() == "todo.page.previous")
+    }));
+    assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE + 1);
+    std::fs::remove_file(path).unwrap();
+}
