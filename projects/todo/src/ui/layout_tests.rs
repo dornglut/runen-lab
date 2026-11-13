@@ -244,8 +244,7 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
                 let name = format!("task.{id}.{suffix}");
                 let rect = get(&name);
                 assert!(
-                    rect.x() >= 0.0 && rect.width() > 0.0
-                        && rect.x() + rect.width() <= width + 1.0,
+                    rect.x() >= 0.0 && rect.width() > 0.0 && rect.x() + rect.width() <= width + 1.0,
                     "task content must not spill horizontally: {name} at {width}x{height}: {rect:?}"
                 );
             }
