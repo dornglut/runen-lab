@@ -74,10 +74,22 @@ application owner, not independently modify its backing file.
 The interface uses RunenUI's public layout and style primitives, with
 an application-owned, accessible-contrast ink/slate palette and mint primary
 action accent. A consistent 4/8/12/16 spacing scale separates the heading,
-composer, filter controls, list cards, and pagination. Five task rows per
-filtered page bound work; long labels, physical font variations, and window
-resizing still require native visual verification. No separate UI toolkit
-or framework fork is involved.
+composer, filter controls, list cards, and pagination. The root fills the
+available logical window height, clips horizontal overflow and uses RunenUI's
+runtime-owned vertical scrolling when content exceeds the window. Composer
+and filter controls wrap according to available width, with no device-name
+or viewport-width breakpoint; a maximum content width of 780 logical units
+remains a readability constraint, not a fixed window size.
+
+The app still renders at most five task rows per filtered page to keep the
+mounted work bounded until RunenUI M12 virtual collections are available.
+This limit does not vary with viewport height and must not be mistaken for
+responsive paging. Deterministic surface-layout regression tests cover
+240x400, 320x568, 390x844, 768x1024, 800x600, 1280x800 and 1920x1080
+logical viewports. These tests do not qualify Android/iOS hosts, touch input,
+native scroll wheel and DPI/scale/IME behavior, or smooth live resizing;
+those remain separate platform/RunenUI/Runenwerk work. No separate UI
+toolkit or framework fork is involved.
 
 ## Terminal-only development workflow
 
