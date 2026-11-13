@@ -55,6 +55,9 @@ def main() -> None:
         assert page.locator("#status").inner_text().startswith("Simulating")
         assert not errors, errors
 
+        assert page.get_by_role('group', name='Interactive topology graph with draggable nodes').count() == 1
+        assert page.get_by_role('button', name='Node 0, degree 1').count() == 1
+
         # The graph is interactive, including keyboard access.
         node = page.locator('circle.graph-node[aria-label^="Node 0,"]')
         node.click()
@@ -94,7 +97,10 @@ def main() -> None:
 
         # Accepted JSON import and rejected malformed JSON do not corrupt the graph.
         fixture = ROOT / "fixtures/sample.json"
-        page.locator("#file-input").set_input_files(fixture)
+        with page.expect_file_chooser() as chooser:
+            page.get_by_role('button', name='Import JSON').focus()
+            page.keyboard.press('Enter')
+        chooser.value.set_files(fixture)
         assert page.locator("#node-count").inner_text() == "8"
         page.locator("#file-input").set_input_files({"name": "bad.json", "mimeType": "application/json", "buffer": b"{"})
         assert page.locator("#error-banner").is_visible()

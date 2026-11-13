@@ -266,6 +266,7 @@ function initialize() {
     try { createView(parseGraphJson(await file.text())); }
     catch (error) { showError(error instanceof GraphDataError ? error.message : 'Failed to read graph file.'); }
   }
+  $('import-button').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', (event) => {
     void importFile(event.target.files?.[0]);
     event.target.value = '';

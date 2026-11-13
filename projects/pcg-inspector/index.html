@@ -14,7 +14,7 @@
 <div class="app">
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">R</span><span class="brand-name">Runen Lab</span><span class="brand-separator">/</span><strong>Graph Inspector</strong><span class="version">EXPERIMENTAL</span></div>
-    <div class="top-actions"><span class="scope">D3 force · topology only</span><button class="button button-outline" id="sample-button" type="button">Load example</button><label class="button button-primary" for="file-input">Import JSON</label><input id="file-input" type="file" accept="application/json,.json" hidden></div>
+    <div class="top-actions"><span class="scope">D3 force · topology only</span><button class="button button-outline" id="sample-button" type="button">Load example</button><button id="import-button" class="button button-primary" type="button">Import JSON</button><input id="file-input" type="file" accept="application/json,.json" hidden></div>
   </header>
 
   <main class="workspace">
@@ -34,7 +34,7 @@
 
     <section class="visual-pane" aria-label="Interactive force-directed graph">
       <div class="visual-toolbar"><span class="live-dot" aria-hidden="true"></span><span id="status" role="status" aria-live="polite">Initializing…</span><div class="toolbar-right"><button id="export-button" class="button button-outline" type="button">Export SVG</button></div></div>
-      <div id="drop-zone" class="canvas-frame"><svg id="graph-svg" role="img" aria-label="Interactive topology graph with draggable nodes" viewBox="0 0 1200 800"><title>Connected graph topology</title></svg><div id="canvas-hint" class="canvas-hint">Drag nodes · Pan background · Wheel zoom</div></div>
+      <div id="drop-zone" class="canvas-frame"><svg id="graph-svg" role="group" aria-label="Interactive topology graph with draggable nodes" viewBox="0 0 1200 800"><title>Connected graph topology</title></svg><div id="canvas-hint" class="canvas-hint">Drag nodes · Pan background · Wheel zoom</div></div>
       <div class="visual-footer"><div class="legend"><span><i class="legend-node" aria-hidden="true"></i> Node</span><span><i class="legend-node hub" aria-hidden="true"></i> Branching node</span><span><i class="legend-line" aria-hidden="true"></i> Connection</span></div><span class="muted small">Layout coordinates are not world coordinates</span></div>
     </section>
   </main>
