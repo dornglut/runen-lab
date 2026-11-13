@@ -30,6 +30,7 @@ pub enum Error {
 trait Column {
     fn clone_box(&self) -> Box<dyn Column>;
     fn erase(&mut self, key: Key) -> bool;
+    fn contains(&self, key: Key) -> bool;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -46,6 +47,9 @@ impl<T: Clone + Eq + 'static> Column for Values<T> {
     }
     fn erase(&mut self, key: Key) -> bool {
         self.0.remove(&key).is_some()
+    }
+    fn contains(&self, key: Key) -> bool {
+        self.0.contains_key(&key)
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -401,6 +405,12 @@ impl Engine {
             outputs: &self.by_type,
         })?;
 
+        // Despawned nodes have no tasks to evaluate in the staged world.
+        // Preserve their prior derived values' removal facts explicitly.
+        let removed_keys: Vec<_> = self.world.live.values().copied()
+            .filter(|&key| !proposed.contains(key))
+            .collect();
+
         // The old dependency graph determines which tasks must be invalidated.
         // A derived output's invalidation is propagated transitively, before
         // evaluating any rule, even when its next value proves unchanged.
@@ -447,6 +457,18 @@ impl Engine {
         let tasks: Vec<_> = evaluator.invalidated.iter().copied().collect();
         for task in tasks {
             evaluator.evaluate(task)?;
+        }
+        for key in removed_keys {
+            for rule in &self.rules {
+                if self.world.columns.get(&rule.output)
+                    .is_some_and(|column| column.contains(key))
+                {
+                    evaluator.output_changes.insert(Fact {
+                        ty: rule.output,
+                        key,
+                    }, ChangeKind::Removed);
+                }
+            }
         }
         let evaluations = evaluator.done.len();
         let mut dependencies = self.dependencies.clone();
