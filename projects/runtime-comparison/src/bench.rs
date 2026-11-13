@@ -1,5 +1,5 @@
-//! Exploratory, propagation-only same-host Release measurements.
-//! Admission/fixture parsing, setup, and verification are excluded from the timed loop.
+//! Exploratory same-host Release measurements in propagation and shared-transaction modes.
+//! Transaction mode includes admission; fixture parsing, setup, and readback are excluded.
 use crate::Consumer;
 use crate::bevy_backend::BevyBackend;
 use crate::contract::{Data, Dirty, Edit, Key, Obj, Packet, propose};
@@ -157,11 +157,7 @@ fn transition_edits(before: &Data, after: &Data, dirty: &Dirty) -> Vec<Edit> {
     edits
 }
 
-fn apply_transaction(
-    consumer: &mut dyn Consumer,
-    source: &mut Data,
-    ops: &[Edit],
-) {
+fn apply_transaction(consumer: &mut dyn Consumer, source: &mut Data, ops: &[Edit]) {
     let next = propose(source, ops).expect("valid benchmark transaction");
     consumer.apply(source, &next.data, &next.dirty);
     *source = next.data;
@@ -177,7 +173,10 @@ pub fn run(args: &[String]) {
     let size: u32 = args[2].parse().expect("integer object count");
     let iterations: usize = args[3].parse().expect("integer iteration count");
     let mode = args.get(4).map_or("propagation", String::as_str);
-    assert!(matches!(mode, "propagation" | "transaction"), "unknown benchmark mode");
+    assert!(
+        matches!(mode, "propagation" | "transaction"),
+        "unknown benchmark mode"
+    );
     assert!((32..=100_000).contains(&size), "object count out of range");
     assert!(
         (2..=100_000).contains(&iterations) && iterations.is_multiple_of(2),
