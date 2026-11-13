@@ -960,5 +960,72 @@ fn native_smoke_click_targets() {
     let reopen_x = (reopen.x() + reopen.width() / 2.0).round() as u32;
     let reopen_y = (reopen.y() + reopen.height() / 2.0).round() as u32;
     println!("TODO_NATIVE_TARGET reopen {reopen_x} {reopen_y}");
+    // Separate native-font publications for both pages prove that original
+    // OS clicks have reachable targets after paging without relying on a
+    // fixed pixel offset or an artificial title width.
+    let paging_path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-native-pages-{}.json",
+        std::process::id()
+    ));
+    assert!(!paging_path.exists(), "native paging fixture must be isolated");
+    let paging_storage = TodoStorage::at(paging_path.clone());
+    let mut paging_service = TodoService::at(paging_storage.clone()).unwrap();
+    for index in 1..=TASKS_PER_PAGE + 1 {
+        paging_service
+            .execute(TodoCommand::Add {
+                title: format!("Bulk {index}"),
+            })
+            .unwrap();
+    }
+    for page_index in [0_usize, 1] {
+        let mut page_state = TodoUiState::new(TodoService::at(paging_storage.clone()).unwrap());
+        page_state.page_index = page_index;
+        let config = runenui_runtime::RuntimeConfig::default()
+            .with_text_font_source_policy(runenui_runtime::FontSourcePolicy::SystemAndBundled);
+        let mut page_runtime = AppRuntime::<TodoUi>::mount_with_config(page_state, config).unwrap();
+        let page_publication = page_runtime
+            .publish_surface(&SurfaceBuildContext::tight(
+                &style,
+                LogicalSize::try_new(800.0, 600.0).unwrap(),
+            ))
+            .unwrap();
+        let last_toggle = format!("task.{}.toggle", TASKS_PER_PAGE + 1);
+        let targets = if page_index == 0 {
+            [
+                ("page-next", "todo.page.next".to_owned()),
+                ("page-first", "task.1.toggle".to_owned()),
+            ]
+        } else {
+            [
+                ("page-previous", "todo.page.previous".to_owned()),
+                ("page-last", last_toggle),
+            ]
+        };
+        for (name, id) in targets {
+            let rect = page_publication
+                .frame()
+                .nodes()
+                .iter()
+                .find(|node| {
+                    node.authored_id()
+                        .is_some_and(|authored| authored.as_str() == id.as_str())
+                })
+                .unwrap_or_else(|| panic!("paged native target missing: {id}"))
+                .bounds();
+            assert!(
+                rect.width() >= 12.0
+                    && rect.height() >= 12.0
+                    && rect.x() >= 0.0
+                    && rect.y() >= 0.0
+                    && rect.x() + rect.width() <= 800.0
+                    && rect.y() + rect.height() <= 600.0,
+                "paged native target outside viewport: {id} {rect:?}"
+            );
+            let x = (rect.x() + rect.width() / 2.0).round() as u32;
+            let y = (rect.y() + rect.height() / 2.0).round() as u32;
+            println!("TODO_NATIVE_TARGET {name} {x} {y}");
+        }
+    }
+    std::fs::remove_file(paging_path).unwrap();
     std::fs::remove_file(path).unwrap();
 }

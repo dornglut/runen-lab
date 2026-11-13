@@ -176,7 +176,7 @@ while read -r label name x y; do
   target_x["$name"]="$x"
   target_y["$name"]="$y"
 done < "$TODO_NATIVE_TARGETS_FILE"
-for name in field add toggle remove reopen; do
+for name in field add toggle remove reopen page-next page-first page-previous page-last; do
   [[ -n "${target_x[$name]:-}" && -n "${target_y[$name]:-}" ]] || fail "native-geometry-incomplete"
   echo "todo_native_x11=target name=$name x=${target_x[$name]} y=${target_y[$name]}"
 done
@@ -254,8 +254,89 @@ if ! close_todo after-empty; then
   close_failures=$((close_failures + 1))
 fi
 
+
+# A second, isolated accepted storage fixture exercises both page actions
+# through original native pointer input. Verify task IDs, not just appearance,
+# so clicking the wrong page cannot produce a false positive.
+python3 - "$RUNEN_LAB_TODO_DATA_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = {
+    "version": 1,
+    "next_id": 10,
+    "tasks": [
+        {"id": i, "title": f"Bulk {i}", "completed": False}
+        for i in range(1, 10)
+    ],
+}
+Path(sys.argv[1]).write_text(json.dumps(data), encoding="utf-8")
+PY
+
+bulk_matches() {
+  python3 - "$RUNEN_LAB_TODO_DATA_FILE" "$1" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    stage = sys.argv[2]
+    assert stage in ("initial", "last", "both")
+    tasks = data["tasks"]
+    ok = data["version"] == 1 and data["next_id"] == 10 and len(tasks) == 9
+    for i, task in enumerate(tasks, start=1):
+        expected_completed = (i == 9 and stage in ("last", "both")) or (i == 1 and stage == "both")
+        ok = ok and task == {
+            "id": i,
+            "title": f"Bulk {i}",
+            "completed": expected_completed,
+        }
+except (OSError, ValueError, KeyError, TypeError, AssertionError):
+    ok = False
+sys.exit(0 if ok else 1)
+PY
+}
+
+await_bulk() {
+  for _ in $(seq 1 80); do
+    assert_alive "$2-exited"
+    if bulk_matches "$1"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  fail "$2-no-persisted-state"
+}
+
+start_todo
+bulk_matches "initial" || fail "bulk-startup-invalid"
+xdotool mousemove --window "$window" "${target_x[page-next]}" "${target_y[page-next]}" click 1
+sleep 0.5
+assert_alive "bulk-next"
+xdotool mousemove --window "$window" "${target_x[page-last]}" "${target_y[page-last]}" click 1
+await_bulk "last" "bulk-page-two-toggle"
+echo "todo_native_x11=pass phase=native-next-page-and-last-task"
+xdotool mousemove --window "$window" "${target_x[page-previous]}" "${target_y[page-previous]}" click 1
+sleep 0.5
+assert_alive "bulk-previous"
+xdotool mousemove --window "$window" "${target_x[page-first]}" "${target_y[page-first]}" click 1
+await_bulk "both" "bulk-page-one-toggle"
+echo "todo_native_x11=pass phase=native-previous-page-and-first-task"
+if ! close_todo after-pages; then
+  close_failures=$((close_failures + 1))
+fi
+
+start_todo
+bulk_matches "both" || fail "bulk-restart-state-lost"
+echo "todo_native_x11=pass phase=paged-changes-reloaded"
+if ! close_todo after-paged-restart; then
+  close_failures=$((close_failures + 1))
+fi
+
 if [[ "$close_failures" -ne 0 ]]; then
   echo "todo_native_x11=fail close_methods=$close_failures physical_x11=true mode=release" >&2
   exit 1
 fi
-echo "todo_native_x11=pass physical_x11=true mode=release persistence=true reopen=true remove=true close=true"
+echo "todo_native_x11=pass physical_x11=true mode=release persistence=true reopen=true remove=true pages=true close=true"
