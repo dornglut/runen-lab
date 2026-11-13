@@ -216,7 +216,6 @@ fn direct_effect_in_callback_is_not_rollback_safe_negative_oracle() -> Result<()
     Ok(())
 }
 
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Noise(u32);
 
