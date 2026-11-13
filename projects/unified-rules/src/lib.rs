@@ -2,6 +2,7 @@
 //! This is a deliberately serial, in-memory experiment, NOT framework authority.
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -28,6 +29,8 @@ pub enum Error {
     DuplicateClock,
     UnregisteredClock,
     InvalidClock,
+    ScopeMismatch,
+    GlobalOccurrenceUnsupported,
 }
 
 trait Column {
@@ -62,13 +65,57 @@ impl<T: Clone + Eq + 'static> Column for Values<T> {
     }
 }
 
+
+// Keyless values have their own typed storage: they are not disguised rows.
+trait SingletonColumn {
+    fn clone_box(&self) -> Box<dyn SingletonColumn>;
+    fn as_any(&self) -> &dyn Any;
+}
+impl Clone for Box<dyn SingletonColumn> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+#[derive(Clone)]
+struct SingletonValue<T: Clone + Eq + 'static>(T);
+impl<T: Clone + Eq + 'static> SingletonColumn for SingletonValue<T> {
+    fn clone_box(&self) -> Box<dyn SingletonColumn> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[derive(Clone, Default)]
 struct World {
     live: BTreeMap<u32, Key>,
     generation: BTreeMap<u32, u32>,
     columns: HashMap<TypeId, Box<dyn Column>>,
+    singletons: HashMap<TypeId, Box<dyn SingletonColumn>>,
 }
 impl World {
+    fn singleton<T: Clone + Eq + 'static>(&self) -> Option<T> {
+        self.singletons
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.as_any().downcast_ref::<SingletonValue<T>>())
+            .map(|value| value.0.clone())
+    }
+    fn set_singleton<T: Clone + Eq + 'static>(&mut self, value: Option<T>) -> bool {
+        if self.singleton::<T>() == value {
+            return false;
+        }
+        match value {
+            Some(value) => {
+                self.singletons
+                    .insert(TypeId::of::<T>(), Box::new(SingletonValue(value)));
+            }
+            None => {
+                self.singletons.remove(&TypeId::of::<T>());
+            }
+        }
+        true
+    }
     fn contains(&self, key: Key) -> bool {
         self.live.get(&key.slot) == Some(&key)
     }
@@ -113,23 +160,34 @@ impl World {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
+enum FactScope {
+    Key(Key),
+    Collection,
+    Singleton,
+}
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 struct Fact {
     ty: TypeId,
-    // None is the typed collection itself, not an entity (avoids fake sentinel keys).
-    key: Option<Key>,
+    scope: FactScope,
 }
 impl Fact {
     fn of<T: 'static>(key: Key) -> Self {
         Self::keyed(TypeId::of::<T>(), key)
     }
     fn keyed(ty: TypeId, key: Key) -> Self {
-        Self { ty, key: Some(key) }
+        Self { ty, scope: FactScope::Key(key) }
     }
     fn collection<T: 'static>() -> Self {
         Self::collection_type(TypeId::of::<T>())
     }
     fn collection_type(ty: TypeId) -> Self {
-        Self { ty, key: None }
+        Self { ty, scope: FactScope::Collection }
+    }
+    fn singleton<T: 'static>() -> Self {
+        Self::singleton_type(TypeId::of::<T>())
+    }
+    fn singleton_type(ty: TypeId) -> Self {
+        Self { ty, scope: FactScope::Singleton }
     }
 }
 struct Exists;
@@ -148,6 +206,14 @@ pub enum OutputChange<T> {
     Added(Key, T),
     Updated(Key, T),
     Removed(Key),
+}
+
+/// Last committed change of a derived keyless value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SingletonChange<T> {
+    Added(T),
+    Updated(T),
+    Removed,
 }
 
 /// In-memory occurrence from the latest successful transaction only.
@@ -211,6 +277,24 @@ impl Transaction<'_> {
         }
         Ok(())
     }
+    pub fn put_singleton<T: Clone + Eq + 'static>(&mut self, value: T) -> Result<(), Error> {
+        self.replace_singleton(Some(value))
+    }
+    pub fn remove_singleton<T: Clone + Eq + 'static>(&mut self) -> Result<(), Error> {
+        self.replace_singleton::<T>(None)
+    }
+    fn replace_singleton<T: Clone + Eq + 'static>(
+        &mut self,
+        value: Option<T>,
+    ) -> Result<(), Error> {
+        if self.outputs.contains_key(&TypeId::of::<T>()) {
+            return Err(Error::DerivedIsReadOnly);
+        }
+        if self.world.set_singleton(value) {
+            self.changed.insert(Fact::singleton::<T>());
+        }
+        Ok(())
+    }
     pub fn put<T: Clone + Eq + 'static>(&mut self, key: Key, value: T) -> Result<(), Error> {
         self.replace::<T>(key, Some(value))
     }
@@ -237,14 +321,64 @@ impl Transaction<'_> {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum TaskAt {
+    Key(Key),
+    Singleton,
+}
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct Task {
     rule: usize,
-    key: Key,
+    at: TaskAt,
 }
-type RuleFn = dyn for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<(), Error>;
+impl Task {
+    fn key(rule: usize, key: Key) -> Self {
+        Self { rule, at: TaskAt::Key(key) }
+    }
+    fn singleton(rule: usize) -> Self {
+        Self { rule, at: TaskAt::Singleton }
+    }
+}
+type RuleFn = dyn for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, TaskAt) -> Result<(), Error>;
 struct Rule {
     output: TypeId,
+    singleton: bool,
     evaluate: Rc<RuleFn>,
+}
+
+/// A typed scope is part of the output identity, not a special-purpose system.
+pub struct Each<T>(PhantomData<T>);
+pub struct One<T>(PhantomData<T>);
+
+/// Experimental single registration contract; keyed and keyless results share
+/// the same evaluator, dependency graph and transaction.
+pub trait OutputShape {
+    type At: Copy + 'static;
+    type Value: Clone + Eq + 'static;
+    fn install(
+        engine: &mut Engine,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Self::At) -> Result<Option<Self::Value>, Error>
+            + 'static,
+    ) -> Result<(), Error>;
+}
+impl<T: Clone + Eq + 'static> OutputShape for Each<T> {
+    type At = Key;
+    type Value = T;
+    fn install(
+        engine: &mut Engine,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<Option<T>, Error> + 'static,
+    ) -> Result<(), Error> {
+        engine.rule(f)
+    }
+}
+impl<T: Clone + Eq + 'static> OutputShape for One<T> {
+    type At = ();
+    type Value = T;
+    fn install(
+        engine: &mut Engine,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, ()) -> Result<Option<T>, Error> + 'static,
+    ) -> Result<(), Error> {
+        engine.singleton_rule(move |cx| f(cx, ()))
+    }
 }
 
 struct Evaluator<'r> {
@@ -263,7 +397,7 @@ struct Evaluator<'r> {
 }
 impl Evaluator<'_> {
     fn evaluate(&mut self, task: Task) -> Result<(), Error> {
-        if !self.world.contains(task.key)
+        if matches!(task.at, TaskAt::Key(key) if !self.world.contains(key))
             || !self.invalidated.contains(&task)
             || self.done.contains(&task)
         {
@@ -281,7 +415,7 @@ impl Evaluator<'_> {
                 task,
                 next_ordinal: 0,
             },
-            task.key,
+            task.at,
         );
         self.visiting.remove(&task);
         outcome?;
@@ -306,9 +440,30 @@ impl RuleCx<'_, '_> {
         let fact = Fact::of::<T>(key);
         self.reads.insert(fact);
         if let Some(&rule) = self.evaluator.by_type.get(&fact.ty) {
-            self.evaluator.evaluate(Task { rule, key })?;
+            if self.evaluator.rules[rule].singleton {
+                return Err(Error::ScopeMismatch);
+            }
+            self.evaluator.evaluate(Task::key(rule, key))?;
         }
         Ok(self.evaluator.world.get::<T>(key))
+    }
+
+    /// Depend on a genuinely keyless typed source or derived value.
+    pub fn singleton<T: Clone + Eq + 'static>(&mut self) -> Result<Option<T>, Error> {
+        let fact = Fact::singleton::<T>();
+        self.reads.insert(fact);
+        if let Some(&rule) = self.evaluator.by_type.get(&fact.ty) {
+            if !self.evaluator.rules[rule].singleton {
+                return Err(Error::ScopeMismatch);
+            }
+            self.evaluator.evaluate(Task::singleton(rule))?;
+        }
+        Ok(self.evaluator.world.singleton::<T>())
+    }
+
+    /// The preceding committed keyless value; not a present-revision edge.
+    pub fn previous_singleton<T: Clone + Eq + 'static>(&self) -> Option<T> {
+        self.evaluator.previous.singleton::<T>()
     }
 
     /// An ordered snapshot of every current value of a type, including rule-owned
@@ -322,7 +477,10 @@ impl RuleCx<'_, '_> {
         let mut result = Vec::new();
         for key in keys {
             if let Some(&rule) = self.evaluator.by_type.get(&ty) {
-                self.evaluator.evaluate(Task { rule, key })?;
+                if self.evaluator.rules[rule].singleton {
+                    return Err(Error::ScopeMismatch);
+                }
+                self.evaluator.evaluate(Task::key(rule, key))?;
             }
             if let Some(value) = self.evaluator.world.get::<T>(key) {
                 result.push((key, value));
@@ -365,6 +523,11 @@ impl RuleCx<'_, '_> {
     /// Stage a typed occurrence; it becomes visible only after a successful commit.
     /// This does not execute I/O or guarantee delivery to external consumers.
     pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
+        // Existing occurrence consumers have per-entity source/ordinal semantics.
+        // Do not manufacture an entity key for a keyless producer.
+        if matches!(self.task.at, TaskAt::Singleton) {
+            return Err(Error::GlobalOccurrenceUnsupported);
+        }
         let ordinal = self.next_ordinal;
         self.next_ordinal = self.next_ordinal.checked_add(1).ok_or(Error::Overflow)?;
         self.evaluator.events.push(StagedEvent {
@@ -388,11 +551,78 @@ pub struct Engine {
     insertions: HashSet<Fact>,
     output_changes: HashMap<Fact, ChangeKind>,
     last_evaluations: usize,
+    initialized_singletons: HashSet<usize>,
 }
 
 impl Engine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Single registration form with an explicit typed output scope.
+    pub fn derive<S: OutputShape>(
+        &mut self,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, S::At)
+                -> Result<Option<S::Value>, Error>
+            + 'static,
+    ) -> Result<(), Error> {
+        S::install(self, f)
+    }
+
+    fn singleton_rule<T: Clone + Eq + 'static>(
+        &mut self,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>)
+            -> Result<Option<T>, Error>
+            + 'static,
+    ) -> Result<(), Error> {
+        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
+            return Err(Error::LateRegistration);
+        }
+        let ty = TypeId::of::<T>();
+        if self.by_type.contains_key(&ty) {
+            return Err(Error::DuplicateProducer);
+        }
+        let callback = move |cx: &mut RuleCx<'_, '_>, at: TaskAt| {
+            if at != TaskAt::Singleton {
+                return Err(Error::ScopeMismatch);
+            }
+            let value = f(cx)?;
+            let previous = cx.evaluator.world.singleton::<T>();
+            if previous != value {
+                let kind = match (previous.is_some(), value.is_some()) {
+                    (false, true) => ChangeKind::Added,
+                    (true, true) => ChangeKind::Updated,
+                    (true, false) => ChangeKind::Removed,
+                    (false, false) => unreachable!("unequal missing values"),
+                };
+                let fact = Fact::singleton::<T>();
+                cx.evaluator.output_changes.insert(fact, kind);
+            }
+            cx.evaluator.world.set_singleton::<T>(value);
+            Ok(())
+        };
+        self.by_type.insert(ty, self.rules.len());
+        self.rules.push(Rule {
+            output: ty,
+            singleton: true,
+            evaluate: Rc::new(callback),
+        });
+        Ok(())
+    }
+
+    /// The current value of a keyless source or derived computation.
+    pub fn singleton<T: Clone + Eq + 'static>(&self) -> Option<T> {
+        self.world.singleton::<T>()
+    }
+
+    /// The last committed change of a derived keyless output.
+    pub fn singleton_change<T: Clone + Eq + 'static>(&self) -> Option<SingletonChange<T>> {
+        let kind = self.output_changes.get(&Fact::singleton::<T>())?;
+        match kind {
+            ChangeKind::Added => self.singleton::<T>().map(SingletonChange::Added),
+            ChangeKind::Updated => self.singleton::<T>().map(SingletonChange::Updated),
+            ChangeKind::Removed => Some(SingletonChange::Removed),
+        }
     }
 
     /// Register a typed clock before spawning keys. Each changed clock value
@@ -443,7 +673,10 @@ impl Engine {
         if self.by_type.contains_key(&ty) {
             return Err(Error::DuplicateProducer);
         }
-        let callback = move |ctx: &mut RuleCx<'_, '_>, key: Key| {
+        let callback = move |ctx: &mut RuleCx<'_, '_>, at: TaskAt| {
+            let TaskAt::Key(key) = at else {
+                return Err(Error::ScopeMismatch);
+            };
             let value = f(ctx, key)?;
             let previously = ctx.evaluator.world.get::<T>(key);
             if previously != value {
@@ -465,6 +698,7 @@ impl Engine {
         self.by_type.insert(ty, self.rules.len());
         self.rules.push(Rule {
             output: ty,
+            singleton: false,
             evaluate: Rc::new(callback),
         });
         Ok(())
@@ -482,8 +716,10 @@ impl Engine {
             .iter()
             .filter(|fact| fact.ty == TypeId::of::<T>())
             .filter_map(|fact| {
-                fact.key
-                    .and_then(|key| self.get::<T>(key).map(|value| (key, value)))
+                match fact.scope {
+                    FactScope::Key(key) => self.get::<T>(key).map(|value| (key, value)),
+                    FactScope::Collection | FactScope::Singleton => None,
+                }
             })
             .collect();
         items.sort_by_key(|(key, _)| *key);
@@ -497,7 +733,9 @@ impl Engine {
             .iter()
             .filter(|(fact, _)| fact.ty == TypeId::of::<T>())
             .filter_map(|(fact, kind)| {
-                let key = fact.key?;
+                let FactScope::Key(key) = fact.scope else {
+                    return None;
+                };
                 match kind {
                     ChangeKind::Added => self
                         .get::<T>(key)
@@ -525,9 +763,12 @@ impl Engine {
             .iter()
             .filter_map(|event| {
                 event.value.downcast_ref::<T>().map(|value| {
-                    let ordinal = ordinals.entry(event.source.key).or_insert(0);
+                    let TaskAt::Key(source) = event.source.at else {
+                        unreachable!("singleton occurrence rejected at admission");
+                    };
+                    let ordinal = ordinals.entry(source).or_insert(0);
                     let item = Occurrence {
-                        source: event.source.key,
+                        source,
                         ordinal: *ordinal,
                         value: value.clone(),
                     };
@@ -592,17 +833,32 @@ impl Engine {
                 for &task in dependents {
                     if invalidated.insert(task) {
                         let output = self.rules[task.rule].output;
-                        queue.push_back(Fact::keyed(output, task.key));
-                        queue.push_back(Fact::collection_type(output));
+                        match task.at {
+                            TaskAt::Key(key) => {
+                                queue.push_back(Fact::keyed(output, key));
+                                queue.push_back(Fact::collection_type(output));
+                            }
+                            TaskAt::Singleton => {
+                                queue.push_back(Fact::singleton_type(output));
+                            }
+                        }
                     }
                 }
             }
         }
         for &key in proposed.live.values() {
             if !self.world.contains(key) {
-                for rule in 0..self.rules.len() {
-                    invalidated.insert(Task { rule, key });
+                for (rule, spec) in self.rules.iter().enumerate() {
+                    if !spec.singleton {
+                        invalidated.insert(Task::key(rule, key));
+                    }
                 }
+            }
+        }
+        // Evaluate each keyless producer once, even if it initially returns None.
+        for (rule, spec) in self.rules.iter().enumerate() {
+            if spec.singleton && !self.initialized_singletons.contains(&rule) {
+                invalidated.insert(Task::singleton(rule));
             }
         }
         // Re-evaluated rules may discover new dependencies. They use the
@@ -642,7 +898,10 @@ impl Engine {
         }
         let evaluations = evaluator.done.len();
         let mut dependencies = self.dependencies.clone();
-        dependencies.retain(|task, _| evaluator.world.contains(task.key));
+        dependencies.retain(|task, _| match task.at {
+            TaskAt::Key(key) => evaluator.world.contains(key),
+            TaskAt::Singleton => true,
+        });
         for task in evaluator.invalidated {
             dependencies.remove(&task);
         }
@@ -673,6 +932,11 @@ impl Engine {
         self.output_changes = output_changes;
         self.events = events;
         self.last_evaluations = evaluations;
+        for (rule, spec) in self.rules.iter().enumerate() {
+            if spec.singleton {
+                self.initialized_singletons.insert(rule);
+            }
+        }
         Ok(())
     }
 }

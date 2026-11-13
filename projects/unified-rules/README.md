@@ -82,6 +82,49 @@ This is deliberately a **test-local candidate adapter** over the same `Engine::r
 
 **References (conceptual, not adopted dependencies):** [Salsa](https://docs.rs/salsa/latest/salsa/), [Ascent](https://docs.rs/ascent/latest/ascent/), [Differential Dataflow](https://docs.rs/differential-dataflow/latest/differential_dataflow/).
 
+
+## Typed output identity experiment — real global computation scope
+
+The preceding candidate comparison found a structural deficiency: the runtime
+identified every task by an entity key. Merely hiding a fake summary key was
+not a complete architectural solution. This bounded kernel experiment adds
+**separate keyed and singleton task/fact identities and typed keyless storage**,
+with one experimental developer-facing `Engine::derive::<Shape>()` registration
+method. `Each<T>` is evaluated for each living record and `One<T>` once for
+the world. The old `Engine::rule::<T>` API stays available only to preserve
+the existing qualified consumers; it is **not** being ratified as a competing
+public API.
+
+Example from independently compiled consumer:
+
+```rust
+app.derive::<Each<LineTotal>>(|ctx, key| {
+    // ... checked calculation for each key ...
+})?;
+app.derive::<One<InvoiceTotal>>(|ctx, ()| {
+    // ... dependent typed collection reduction ...
+})?;
+```
+
+- A keyless source can be set/retracted through a transaction, and typed
+  `ctx.singleton::<T>()` tracks it, including derived singletons.
+- Collection→global→keyed invalidation and keyless derived-on-derived
+  dependencies use the **same** existing evaluator, transaction, reverse graph
+  and rollback. No fabricated entity key is inserted into the world.
+- Test cases cover cross-scope updates, deletion, retraction, unchanged
+  transactions, checked arithmetic overflow rollback, rejected derived writes,
+  and a real global↔global cycle. Event emission from a keyless rule is
+  **explicitly rejected** because the old occurrence identity assumes a
+  producing entity; inventing a key would hide the semantic mismatch.
+
+**Important HOLD:** This is an experiment about identity and semantics only.
+`ctx.all` still scans/clones every keyed value; entire worlds are still
+staged/cloned and reverse indexes rebuilt, and Rules remain serial and
+`Clone + Eq + 'static` constrained. `One` and `Each` are two output
+coordinates in one registration *form*, not proof that temporal/event/effect
+semantics form a complete unified model. Generic identifier ergonomics,
+concurrent reads and fair Bevy/RunenECS benchmarks remain unqualified.
+
 ## Reproduce
 
 ```sh
