@@ -481,7 +481,10 @@ impl Engine {
             .insertions
             .iter()
             .filter(|fact| fact.ty == TypeId::of::<T>())
-            .filter_map(|fact| self.get::<T>(fact.key).map(|value| (fact.key, value)))
+            .filter_map(|fact| {
+                fact.key
+                    .and_then(|key| self.get::<T>(key).map(|value| (key, value)))
+            })
             .collect();
         items.sort_by_key(|(key, _)| *key);
         items
@@ -493,14 +496,13 @@ impl Engine {
             .output_changes
             .iter()
             .filter(|(fact, _)| fact.ty == TypeId::of::<T>())
-            .filter_map(|(fact, kind)| match kind {
-                ChangeKind::Added => self
-                    .get::<T>(fact.key)
-                    .map(|value| OutputChange::Added(fact.key, value)),
-                ChangeKind::Updated => self
-                    .get::<T>(fact.key)
-                    .map(|value| OutputChange::Updated(fact.key, value)),
-                ChangeKind::Removed => Some(OutputChange::Removed(fact.key)),
+            .filter_map(|(fact, kind)| {
+                let key = fact.key?;
+                match kind {
+                    ChangeKind::Added => self.get::<T>(key).map(|value| OutputChange::Added(key, value)),
+                    ChangeKind::Updated => self.get::<T>(key).map(|value| OutputChange::Updated(key, value)),
+                    ChangeKind::Removed => Some(OutputChange::Removed(key)),
+                }
             })
             .collect();
         result.sort_by_key(|change| match change {

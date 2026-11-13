@@ -781,7 +781,14 @@ fn collection_game() -> Engine {
     game.rule::<Weighted>(|ctx, key| {
         Ok(ctx
             .get::<Contribution>(key)?
-            .map(|value| Weighted(value.0 * 2)))
+            .map(|value| {
+                value
+                    .0
+                    .checked_mul(2)
+                    .map(Weighted)
+                    .ok_or(Error::Overflow)
+            })
+            .transpose()?)
     })
     .unwrap();
     game.rule::<Total>(|ctx, key| {
