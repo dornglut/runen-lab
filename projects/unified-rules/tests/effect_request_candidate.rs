@@ -16,9 +16,13 @@ struct Failure(bool);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FailureProducer;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Message { number: u32 }
+struct Message {
+    number: u32,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Upload { number: u32 }
+struct Upload {
+    number: u32,
+}
 
 const KEY: Key = Key::new(1, 1);
 const OTHER: Key = Key::new(2, 1);
@@ -63,10 +67,23 @@ fn requests_persist_until_acknowledged_with_unique_ids_and_typed_origins() -> Re
 
     let records: Vec<EffectRequest<Message>> = app.pending_effects();
     assert_eq!(records.len(), 3);
-    assert_eq!(records.iter().map(|request| request.value.number).collect::<Vec<_>>(), vec![10, 11, 1]);
     assert_eq!(
-        records.iter().map(|request| request.origin).collect::<Vec<_>>(),
-        vec![EventOrigin::Global, EventOrigin::Global, EventOrigin::Key(KEY)]
+        records
+            .iter()
+            .map(|request| request.value.number)
+            .collect::<Vec<_>>(),
+        vec![10, 11, 1]
+    );
+    assert_eq!(
+        records
+            .iter()
+            .map(|request| request.origin)
+            .collect::<Vec<_>>(),
+        vec![
+            EventOrigin::Global,
+            EventOrigin::Global,
+            EventOrigin::Key(KEY)
+        ]
     );
     assert!(records[0].id != records[1].id);
     assert!(records[1].id != records[2].id);

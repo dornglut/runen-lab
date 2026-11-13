@@ -991,14 +991,17 @@ impl Engine {
         self.pending_requests
             .iter()
             .filter_map(|request| {
-                request.value.downcast_ref::<T>().map(|value| EffectRequest {
-                    id: request.id,
-                    origin: match request.source.at {
-                        TaskAt::Key(key) => EventOrigin::Key(key),
-                        TaskAt::Singleton => EventOrigin::Global,
-                    },
-                    value: value.clone(),
-                })
+                request
+                    .value
+                    .downcast_ref::<T>()
+                    .map(|value| EffectRequest {
+                        id: request.id,
+                        origin: match request.source.at {
+                            TaskAt::Key(key) => EventOrigin::Key(key),
+                            TaskAt::Singleton => EventOrigin::Global,
+                        },
+                        value: value.clone(),
+                    })
             })
             .collect()
     }
