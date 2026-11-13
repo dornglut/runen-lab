@@ -109,9 +109,11 @@ fn app() -> Result<Engine, Error> {
                 kind: CommandKind::Start,
             })?;
         }
-        if cx.changed::<CancelRequested>(key)? == Some(CancelRequested {
-            revision: intent.revision,
-        }) {
+        if cx.changed::<CancelRequested>(key)?
+            == Some(CancelRequested {
+                revision: intent.revision,
+            })
+        {
             cx.request(WorkCommand {
                 ticket: WorkTicket {
                     key,
@@ -328,16 +330,12 @@ impl FakeExecutor {
                 TerminalReport::Failed,
                 Phase::Submitted | Phase::CancelRequested,
             ) => Phase::Failed,
-            (
-                CommandKind::Cancel,
-                TerminalReport::Cancelled,
-                Phase::CancelRequested,
-            ) => Phase::Cancelled,
-            (
-                CommandKind::Cancel,
-                TerminalReport::CancelRejected,
-                Phase::CancelRequested,
-            ) => Phase::Submitted,
+            (CommandKind::Cancel, TerminalReport::Cancelled, Phase::CancelRequested) => {
+                Phase::Cancelled
+            }
+            (CommandKind::Cancel, TerminalReport::CancelRejected, Phase::CancelRequested) => {
+                Phase::Submitted
+            }
             _ => return Ok(Decision::Rejected),
         };
         // The terminal result is admitted as an ordinary typed input fact.
@@ -377,18 +375,39 @@ fn completion_failure_and_duplicate_report_are_typed_state() -> Result<(), Error
     create(&mut engine, B, 3)?;
     let a = pending(&engine, ticket(A, 1), CommandKind::Start);
     let b = pending(&engine, ticket(B, 3), CommandKind::Start);
-    assert_eq!(executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?, Decision::NotPending);
+    assert_eq!(
+        executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::NotPending
+    );
     assert_eq!(executor.submit(&mut engine, a)?, Decision::Applied);
     assert_eq!(executor.submit(&mut engine, b)?, Decision::Applied);
     assert_eq!(phase(&engine, A), Some(Phase::Submitted));
-    assert_eq!(executor.report(&mut engine, a, ticket(B, 3), TerminalReport::Completed)?, Decision::Rejected);
-    assert_eq!(executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(&mut engine, a, ticket(B, 3), TerminalReport::Completed)?,
+        Decision::Rejected
+    );
+    assert_eq!(
+        executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
-    assert_eq!(executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?, Decision::NotPending);
-    assert_eq!(executor.report(&mut engine, b, ticket(B, 3), TerminalReport::Failed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(&mut engine, a, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::NotPending
+    );
+    assert_eq!(
+        executor.report(&mut engine, b, ticket(B, 3), TerminalReport::Failed)?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, B), Some(Phase::Failed));
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
-    assert_eq!(engine.get::<View>(A), Some(View { revision: 1, phase: Phase::Completed }));
+    assert_eq!(
+        engine.get::<View>(A),
+        Some(View {
+            revision: 1,
+            phase: Phase::Completed
+        })
+    );
     Ok(())
 }
 
@@ -408,11 +427,43 @@ fn cancellation_race_completion_wins_or_cancel_wins() -> Result<(), Error> {
     let cancel_b = pending(&engine, ticket(B, 1), CommandKind::Cancel);
     executor.submit(&mut engine, cancel_a)?;
     executor.submit(&mut engine, cancel_b)?;
-    assert_eq!(executor.report(&mut engine, start_a, ticket(A, 1), TerminalReport::Completed)?, Decision::Applied);
-    assert_eq!(executor.report(&mut engine, cancel_a, ticket(A, 1), TerminalReport::Cancelled)?, Decision::AlreadyTerminal);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            start_a,
+            ticket(A, 1),
+            TerminalReport::Completed
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            cancel_a,
+            ticket(A, 1),
+            TerminalReport::Cancelled
+        )?,
+        Decision::AlreadyTerminal
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
-    assert_eq!(executor.report(&mut engine, cancel_b, ticket(B, 1), TerminalReport::Cancelled)?, Decision::Applied);
-    assert_eq!(executor.report(&mut engine, start_b, ticket(B, 1), TerminalReport::Completed)?, Decision::AlreadyTerminal);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            cancel_b,
+            ticket(B, 1),
+            TerminalReport::Cancelled
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            start_b,
+            ticket(B, 1),
+            TerminalReport::Completed
+        )?,
+        Decision::AlreadyTerminal
+    );
     assert_eq!(phase(&engine, B), Some(Phase::Cancelled));
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
     Ok(())
@@ -428,9 +479,20 @@ fn cancel_rejected_then_original_operation_completes() -> Result<(), Error> {
     cancel(&mut engine, A, 5)?;
     let cancel_id = pending(&engine, ticket(A, 5), CommandKind::Cancel);
     executor.submit(&mut engine, cancel_id)?;
-    assert_eq!(executor.report(&mut engine, cancel_id, ticket(A, 5), TerminalReport::CancelRejected)?, Decision::Applied);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            cancel_id,
+            ticket(A, 5),
+            TerminalReport::CancelRejected
+        )?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Submitted));
-    assert_eq!(executor.report(&mut engine, id, ticket(A, 5), TerminalReport::Completed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(&mut engine, id, ticket(A, 5), TerminalReport::Completed)?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
     Ok(())
 }
@@ -444,10 +506,16 @@ fn obsolete_revision_and_reused_entity_key_cannot_receive_old_completion() -> Re
     executor.submit(&mut engine, old)?;
     replace(&mut engine, A, 2)?;
     let current = pending(&engine, ticket(A, 2), CommandKind::Start);
-    assert_eq!(executor.report(&mut engine, old, ticket(A, 1), TerminalReport::Completed)?, Decision::Stale);
+    assert_eq!(
+        executor.report(&mut engine, old, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::Stale
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Queued));
     executor.submit(&mut engine, current)?;
-    assert_eq!(executor.report(&mut engine, current, ticket(A, 2), TerminalReport::Failed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(&mut engine, current, ticket(A, 2), TerminalReport::Failed)?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Failed));
 
     engine.transact(|tx| tx.despawn(A))?;
@@ -458,7 +526,15 @@ fn obsolete_revision_and_reused_entity_key_cannot_receive_old_completion() -> Re
     assert_eq!(engine.get::<View>(A), None);
     assert_eq!(phase(&engine, reused), Some(Phase::Queued));
     executor.submit(&mut engine, new_id)?;
-    assert_eq!(executor.report(&mut engine, new_id, ticket(reused, 1), TerminalReport::Completed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            new_id,
+            ticket(reused, 1),
+            TerminalReport::Completed
+        )?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, reused), Some(Phase::Completed));
     Ok(())
 }
@@ -493,7 +569,10 @@ fn terminal_admission_failure_keeps_pending_request_and_original_state() -> Resu
     assert_eq!(phase(&engine, A), Some(Phase::Submitted));
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
     engine.transact(|tx| tx.put_singleton(RejectCompleted(false)))?;
-    assert_eq!(executor.report(&mut engine, id, ticket(A, 1), TerminalReport::Completed)?, Decision::Applied);
+    assert_eq!(
+        executor.report(&mut engine, id, ticket(A, 1), TerminalReport::Completed)?,
+        Decision::Applied
+    );
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
     Ok(())
@@ -510,15 +589,23 @@ fn admission_commit_to_ack_gap_is_visible_not_claimed_atomic() -> Result<(), Err
     // Simulate interruption after committing a typed terminal fact but
     // before engine.acknowledge_effect() removes the outbox entry.
     engine.transact(|tx| {
-        tx.put(A, Execution { revision: 8, phase: Phase::Completed })
+        tx.put(
+            A,
+            Execution {
+                revision: 8,
+                phase: Phase::Completed,
+            },
+        )
     })?;
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
-    assert_eq!(executor.report(&mut engine, id, ticket(A, 8), TerminalReport::Completed)?, Decision::AlreadyTerminal);
+    assert_eq!(
+        executor.report(&mut engine, id, ticket(A, 8), TerminalReport::Completed)?,
+        Decision::AlreadyTerminal
+    );
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
     Ok(())
 }
-
 
 #[test]
 fn cancelling_before_submission_has_no_fictitious_executor_work() -> Result<(), Error> {
