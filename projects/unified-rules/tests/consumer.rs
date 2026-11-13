@@ -421,7 +421,11 @@ fn temporal_game() -> Engine {
         // Two separate occurrences from the same key and commit; neither
         // becomes externally visible if a later rule fails admission.
         let advanced = ctx.advanced::<Step>(CLOCK)?;
-        if let Some(step) = advanced {
+        let Some(step) = ctx.get::<Step>(CLOCK)? else {
+            return Ok(None);
+        };
+        // A new contact during an already-admitted step is also an occurrence.
+        if advanced.is_some() || ctx.previous::<Contact>(entity) != Some(Contact(true)) {
             ctx.emit(ContactPulse {
                 epoch: step.epoch,
                 pulse: 0,
@@ -431,9 +435,6 @@ fn temporal_game() -> Engine {
                 pulse: 1,
             })?;
         }
-        let Some(step) = ctx.get::<Step>(CLOCK)? else {
-            return Ok(None);
-        };
         let previous = ctx.previous::<ContactOccurrence>(entity);
         if advanced.is_some() || previous.is_none() {
             Ok(Some(ContactOccurrence(step.epoch)))
@@ -516,6 +517,7 @@ fn temporal_rule_moves_without_promote_and_emits_repeated_typed_occurrences() ->
         world.changes::<ContactOccurrence>(),
         vec![OutputChange::Added(enemy, ContactOccurrence(3))]
     );
+    assert_eq!(world.events::<ContactPulse>().len(), 2);
     Ok(())
 }
 
