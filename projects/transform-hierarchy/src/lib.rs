@@ -41,16 +41,30 @@ pub struct Node {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Edit {
-    Spawn { id: NodeId, parent: Option<NodeId>, local: Translation },
-    Move { id: NodeId, local: Translation },
-    Reparent { id: NodeId, parent: Option<NodeId> },
-    Remove { id: NodeId },
+    Spawn {
+        id: NodeId,
+        parent: Option<NodeId>,
+        local: Translation,
+    },
+    Move {
+        id: NodeId,
+        local: Translation,
+    },
+    Reparent {
+        id: NodeId,
+        parent: Option<NodeId>,
+    },
+    Remove {
+        id: NodeId,
+    },
 }
 impl Edit {
     fn target(self) -> NodeId {
         match self {
-            Self::Spawn { id, .. } | Self::Move { id, .. }
-            | Self::Reparent { id, .. } | Self::Remove { id } => id,
+            Self::Spawn { id, .. }
+            | Self::Move { id, .. }
+            | Self::Reparent { id, .. }
+            | Self::Remove { id } => id,
         }
     }
 }
@@ -90,10 +104,9 @@ fn full_recompute(source: &Source) -> Result<BTreeMap<u32, Translation>, Error> 
     let mut world = BTreeMap::new();
     while let Some(slot) = queue.pop_front() {
         let node = &source.nodes[&slot];
-        let parent_world = node.parent.map_or(
-            Translation::default(),
-            |parent| world[&parent.slot],
-        );
+        let parent_world = node
+            .parent
+            .map_or(Translation::default(), |parent| world[&parent.slot]);
         world.insert(slot, parent_world.checked_add(node.local)?);
         if let Some(descendants) = children.get(&slot) {
             queue.extend(descendants.iter().copied());
@@ -120,7 +133,11 @@ fn stage(source: &Source, edits: &[Edit]) -> Result<Source, Error> {
                 if next.nodes.contains_key(&id.slot) {
                     return Err(Error::InvalidGeneration);
                 }
-                let expected = next.versions.get(&id.slot).copied().unwrap_or(0)
+                let expected = next
+                    .versions
+                    .get(&id.slot)
+                    .copied()
+                    .unwrap_or(0)
                     .checked_add(1)
                     .ok_or(Error::InvalidGeneration)?;
                 if id.generation != expected {
@@ -130,19 +147,27 @@ fn stage(source: &Source, edits: &[Edit]) -> Result<Source, Error> {
                 next.versions.insert(id.slot, id.generation);
             }
             Edit::Move { id, local } => {
-                let node = next.nodes.get_mut(&id.slot)
+                let node = next
+                    .nodes
+                    .get_mut(&id.slot)
                     .filter(|record| record.id == id)
                     .ok_or(Error::StaleOrMissing)?;
                 node.local = local;
             }
             Edit::Reparent { id, parent } => {
-                let node = next.nodes.get_mut(&id.slot)
+                let node = next
+                    .nodes
+                    .get_mut(&id.slot)
                     .filter(|record| record.id == id)
                     .ok_or(Error::StaleOrMissing)?;
                 node.parent = parent;
             }
             Edit::Remove { id } => {
-                if next.nodes.get(&id.slot).is_none_or(|record| record.id != id) {
+                if next
+                    .nodes
+                    .get(&id.slot)
+                    .is_none_or(|record| record.id != id)
+                {
                     return Err(Error::StaleOrMissing);
                 }
                 next.nodes.remove(&id.slot);
@@ -181,7 +206,9 @@ impl Scene {
             let new_parent = next_source.nodes.get(&slot).and_then(|node| node.parent);
             if old_parent != new_parent {
                 if let Some(parent) = old_parent {
-                    let members = candidate.children.get_mut(&parent.slot)
+                    let members = candidate
+                        .children
+                        .get_mut(&parent.slot)
                         .expect("existing parent index");
                     members.remove(&slot);
                     if members.is_empty() {
@@ -189,7 +216,11 @@ impl Scene {
                     }
                 }
                 if let Some(parent) = new_parent {
-                    candidate.children.entry(parent.slot).or_default().insert(slot);
+                    candidate
+                        .children
+                        .entry(parent.slot)
+                        .or_default()
+                        .insert(slot);
                 }
             }
         }
@@ -217,7 +248,10 @@ impl Scene {
             let mut chain = Vec::new();
             let mut current = slot;
             while !candidate.world.contains_key(&current) {
-                let node = candidate.source.nodes.get(&current)
+                let node = candidate
+                    .source
+                    .nodes
+                    .get(&current)
                     .expect("validated parent chain");
                 chain.push(current);
                 match node.parent {
@@ -227,10 +261,9 @@ impl Scene {
             }
             for id in chain.into_iter().rev() {
                 let node = &candidate.source.nodes[&id];
-                let base = node.parent.map_or(
-                    Translation::default(),
-                    |parent| candidate.world[&parent.slot],
-                );
+                let base = node.parent.map_or(Translation::default(), |parent| {
+                    candidate.world[&parent.slot]
+                });
                 candidate.world.insert(id, base.checked_add(node.local)?);
             }
         }
@@ -241,7 +274,9 @@ impl Scene {
     }
 
     pub fn world(&self, id: NodeId) -> Option<Translation> {
-        self.source.nodes.get(&id.slot)
+        self.source
+            .nodes
+            .get(&id.slot)
             .filter(|node| node.id == id)
             .and_then(|_| self.world.get(&id.slot).copied())
     }
@@ -294,42 +329,58 @@ mod tests {
         let camera = NodeId::new(2, 1);
         let muzzle = NodeId::new(3, 1);
         let mut scene = Scene::new();
-        scene.transact(&[
-            spawn(0, None, (10, 0, 0)),
-            spawn(1, Some(root), (4, 0, 0)),
-            spawn(2, Some(root), (-3, 0, 0)),
-            spawn(3, Some(weapon), (2, 0, 0)),
-        ]).unwrap();
+        scene
+            .transact(&[
+                spawn(0, None, (10, 0, 0)),
+                spawn(1, Some(root), (4, 0, 0)),
+                spawn(2, Some(root), (-3, 0, 0)),
+                spawn(3, Some(weapon), (2, 0, 0)),
+            ])
+            .unwrap();
         assert_eq!(scene.world(muzzle), Some(Translation::new(16, 0, 0)));
-        scene.transact(&[Edit::Move {
-            id: root,
-            local: Translation::new(20, 2, 3),
-        }]).unwrap();
+        scene
+            .transact(&[Edit::Move {
+                id: root,
+                local: Translation::new(20, 2, 3),
+            }])
+            .unwrap();
         assert_eq!(scene.world(camera), Some(Translation::new(17, 2, 3)));
         assert_eq!(scene.world(muzzle), Some(Translation::new(26, 2, 3)));
 
-        scene.transact(&[Edit::Reparent {
-            id: weapon,
-            parent: Some(camera),
-        }]).unwrap();
+        scene
+            .transact(&[Edit::Reparent {
+                id: weapon,
+                parent: Some(camera),
+            }])
+            .unwrap();
         assert_eq!(scene.world(muzzle), Some(Translation::new(23, 2, 3)));
 
         let before = scene.clone();
-        assert_eq!(scene.transact(&[Edit::Reparent {
-            id: root,
-            parent: Some(muzzle),
-        }]), Err(Error::Cycle));
+        assert_eq!(
+            scene.transact(&[Edit::Reparent {
+                id: root,
+                parent: Some(muzzle),
+            }]),
+            Err(Error::Cycle)
+        );
         assert_eq!(scene, before);
 
-        assert_eq!(scene.transact(&[Edit::Remove { id: camera }]),
-            Err(Error::MissingParent));
+        assert_eq!(
+            scene.transact(&[Edit::Remove { id: camera }]),
+            Err(Error::MissingParent)
+        );
         assert_eq!(scene, before);
 
         // Reparent dependents and remove parent as one atomic batch.
-        scene.transact(&[
-            Edit::Reparent { id: weapon, parent: Some(root) },
-            Edit::Remove { id: camera },
-        ]).unwrap();
+        scene
+            .transact(&[
+                Edit::Reparent {
+                    id: weapon,
+                    parent: Some(root),
+                },
+                Edit::Remove { id: camera },
+            ])
+            .unwrap();
         assert_eq!(scene.world(camera), None);
         assert_eq!(scene.world(muzzle), Some(Translation::new(26, 2, 3)));
     }
@@ -342,16 +393,26 @@ mod tests {
         scene.transact(&[spawn(7, None, (1, 2, 3))]).unwrap();
         scene.transact(&[Edit::Remove { id: old }]).unwrap();
         assert_eq!(scene.world(old), None);
-        assert_eq!(scene.transact(&[spawn(7, None, (1, 2, 3))]),
-            Err(Error::InvalidGeneration));
-        scene.transact(&[Edit::Spawn {
-            id: fresh, parent: None, local: Translation::new(4, 5, 6)
-        }]).unwrap();
+        assert_eq!(
+            scene.transact(&[spawn(7, None, (1, 2, 3))]),
+            Err(Error::InvalidGeneration)
+        );
+        scene
+            .transact(&[Edit::Spawn {
+                id: fresh,
+                parent: None,
+                local: Translation::new(4, 5, 6),
+            }])
+            .unwrap();
         assert_eq!(scene.world(old), None);
         assert_eq!(scene.world(fresh), Some(Translation::new(4, 5, 6)));
-        assert_eq!(scene.transact(&[Edit::Move {
-            id: old, local: Translation::new(0, 0, 0)
-        }]), Err(Error::StaleOrMissing));
+        assert_eq!(
+            scene.transact(&[Edit::Move {
+                id: old,
+                local: Translation::new(0, 0, 0)
+            }]),
+            Err(Error::StaleOrMissing)
+        );
     }
 
     #[test]
@@ -359,16 +420,30 @@ mod tests {
         let id = NodeId::new(0, 1);
         let mut scene = Scene::new();
         let original = scene.clone();
-        assert_eq!(scene.transact(&[spawn(0, Some(NodeId::new(9, 1)), (0,0,0))]),
-            Err(Error::MissingParent));
+        assert_eq!(
+            scene.transact(&[spawn(0, Some(NodeId::new(9, 1)), (0, 0, 0))]),
+            Err(Error::MissingParent)
+        );
         assert_eq!(scene, original);
         scene.transact(&[spawn(0, None, (i64::MAX, 0, 0))]).unwrap();
-        assert_eq!(scene.transact(&[spawn(1, Some(id), (1, 0, 0))]),
-            Err(Error::Overflow));
+        assert_eq!(
+            scene.transact(&[spawn(1, Some(id), (1, 0, 0))]),
+            Err(Error::Overflow)
+        );
         assert_eq!(scene.len(), 1);
-        assert_eq!(scene.transact(&[Edit::Move { id, local: Translation::default() },
-            Edit::Move { id, local: Translation::default() }]),
-            Err(Error::DuplicateTarget));
+        assert_eq!(
+            scene.transact(&[
+                Edit::Move {
+                    id,
+                    local: Translation::default()
+                },
+                Edit::Move {
+                    id,
+                    local: Translation::default()
+                }
+            ]),
+            Err(Error::DuplicateTarget)
+        );
         let snapshot = scene.clone();
         scene.transact(&[]).unwrap();
         assert_eq!(scene, snapshot);
@@ -386,7 +461,8 @@ mod tests {
         scene.transact(&edits).unwrap();
         reference.transact(&edits).unwrap();
         let move_root = [Edit::Move {
-            id: root, local: Translation::new(7, 8, 9)
+            id: root,
+            local: Translation::new(7, 8, 9),
         }];
         scene.transact(&move_root).unwrap();
         reference.transact(&move_root).unwrap();
@@ -394,20 +470,27 @@ mod tests {
 
         // Separate 4k-deep chain; no recursive evaluation.
         let mut chain = Scene::new();
-        let chain_edits: Vec<_> = (0..4096).map(|slot| {
-            let parent = if slot == 0 {
-                None
-            } else {
-                Some(NodeId::new(slot - 1, 1))
-            };
-            spawn(slot, parent, (1, 1, 1))
-        }).collect();
+        let chain_edits: Vec<_> = (0..4096)
+            .map(|slot| {
+                let parent = if slot == 0 {
+                    None
+                } else {
+                    Some(NodeId::new(slot - 1, 1))
+                };
+                spawn(slot, parent, (1, 1, 1))
+            })
+            .collect();
         chain.transact(&chain_edits).unwrap();
-        chain.transact(&[Edit::Move {
-            id: root, local: Translation::new(2, 2, 2)
-        }]).unwrap();
-        assert_eq!(chain.world(NodeId::new(4095, 1)),
-            Some(Translation::new(4097, 4097, 4097)));
+        chain
+            .transact(&[Edit::Move {
+                id: root,
+                local: Translation::new(2, 2, 2),
+            }])
+            .unwrap();
+        assert_eq!(
+            chain.world(NodeId::new(4095, 1)),
+            Some(Translation::new(4097, 4097, 4097))
+        );
     }
 
     #[test]
@@ -417,8 +500,11 @@ mod tests {
         let mut initial = vec![spawn(0, None, (0, 0, 0))];
         for slot in 1..128 {
             let parent = NodeId::new((slot - 1) / 2, 1);
-            initial.push(spawn(slot, Some(parent),
-                (i64::from(slot), -(i64::from(slot)), 1)));
+            initial.push(spawn(
+                slot,
+                Some(parent),
+                (i64::from(slot), -(i64::from(slot)), 1),
+            ));
         }
         scene.transact(&initial).unwrap();
         reference.transact(&initial).unwrap();
@@ -432,16 +518,20 @@ mod tests {
             let slot = (seed % 128) as u32;
             let id = NodeId::new(slot, 1);
             let edits = match i % 5 {
-                0 => vec![Edit::Move { id,
-                    local: Translation::new(i64::from(i), i64::from(slot), 1) }],
+                0 => vec![Edit::Move {
+                    id,
+                    local: Translation::new(i64::from(i), i64::from(slot), 1),
+                }],
                 1 => vec![Edit::Reparent {
                     id,
-                    parent: Some(NodeId::new(((seed >> 12) % 128) as u32, 1))
+                    parent: Some(NodeId::new(((seed >> 12) % 128) as u32, 1)),
                 }],
                 2 => vec![Edit::Remove { id }],
                 3 => vec![Edit::Reparent { id, parent: None }],
-                _ => vec![Edit::Move { id,
-                    local: Translation::new(i64::from(slot), 5, 7) }],
+                _ => vec![Edit::Move {
+                    id,
+                    local: Translation::new(i64::from(slot), 5, 7),
+                }],
             };
             let snapshot = scene.clone();
             let got = scene.transact(&edits);
