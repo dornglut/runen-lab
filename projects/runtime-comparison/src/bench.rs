@@ -292,7 +292,11 @@ mod tests {
 }
 
 pub fn diagnostic(args: &[String]) {
-    assert_eq!(args.len(), 4, "usage: --diagnostic BACKEND WORKLOAD OBJECTS ITERATIONS");
+    assert_eq!(
+        args.len(),
+        4,
+        "usage: --diagnostic BACKEND WORKLOAD OBJECTS ITERATIONS"
+    );
     let backend = args[0].as_str();
     let workload = args[1].as_str();
     let size: u32 = args[2].parse().expect("integer object count");
@@ -326,7 +330,10 @@ pub fn diagnostic(args: &[String]) {
             );
         }
         "runen" => {
-            assert_eq!(workload, "noop", "RunenECS diagnosis is currently no-op only");
+            assert_eq!(
+                workload, "noop",
+                "RunenECS diagnosis is currently no-op only"
+            );
             let mut consumer = RunenBackend::new(&before);
             let (resource_ns, schedule_ns) = consumer.profile_noop_schedule(iterations);
             assert_eq!(consumer.data(), before);
