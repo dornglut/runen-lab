@@ -25,6 +25,9 @@ pub enum Error {
     RuleCycle,
     InvalidRelationship,
     Overflow,
+    DuplicateClock,
+    UnregisteredClock,
+    InvalidClock,
 }
 
 trait Column {
@@ -140,6 +143,27 @@ pub enum OutputChange<T> {
     Removed(Key),
 }
 
+/// In-memory occurrence from the latest successful transaction only.
+/// This does not imply delivery or acknowledgment of an external effect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Occurrence<T> {
+    pub source: Key,
+    pub ordinal: u32,
+    pub value: T,
+}
+
+struct StagedEvent {
+    source: Task,
+    ordinal: u32,
+    value: Box<dyn Any>,
+}
+
+type ClockValidator = dyn Fn(&World, &World) -> Result<(), Error>;
+struct ClockSpec {
+    fact: Fact,
+    validate: Rc<ClockValidator>,
+}
+
 pub struct Transaction<'a> {
     world: &'a mut World,
     changed: &'a mut HashSet<Fact>,
@@ -219,6 +243,8 @@ struct Evaluator<'r> {
     previous: &'r World,
     rules: &'r [Rule],
     by_type: &'r HashMap<TypeId, usize>,
+    clocks: &'r [ClockSpec],
+    events: Vec<StagedEvent>,
     invalidated: BTreeSet<Task>,
     done: BTreeSet<Task>,
     visiting: BTreeSet<Task>,
@@ -243,6 +269,8 @@ impl Evaluator<'_> {
             &mut RuleCx {
                 evaluator: self,
                 reads: &mut reads,
+                task,
+                next_ordinal: 0,
             },
             task.key,
         );
@@ -257,6 +285,8 @@ impl Evaluator<'_> {
 pub struct RuleCx<'e, 'r> {
     evaluator: &'e mut Evaluator<'r>,
     reads: &'e mut HashSet<Fact>,
+    task: Task,
+    next_ordinal: u32,
 }
 impl RuleCx<'_, '_> {
     pub fn exists(&mut self, key: Key) -> bool {
@@ -288,6 +318,33 @@ impl RuleCx<'_, '_> {
             None
         })
     }
+
+    /// The newly admitted clock step, or None for a non-step edit.
+    /// Unlike a general `changed` read, this requires registered monotonic admission.
+    pub fn advanced<T: Clone + Eq + 'static>(&mut self, key: Key) -> Result<Option<T>, Error> {
+        if !self
+            .evaluator
+            .clocks
+            .iter()
+            .any(|clock| clock.fact == Fact::of::<T>(key))
+        {
+            return Err(Error::UnregisteredClock);
+        }
+        self.changed::<T>(key)
+    }
+
+    /// Stage a typed occurrence; it becomes visible only after a successful commit.
+    /// This does not execute I/O or guarantee delivery to external consumers.
+    pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
+        let ordinal = self.next_ordinal;
+        self.next_ordinal = self.next_ordinal.checked_add(1).ok_or(Error::Overflow)?;
+        self.evaluator.events.push(StagedEvent {
+            source: self.task,
+            ordinal,
+            value: Box::new(value),
+        });
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -295,6 +352,8 @@ pub struct Engine {
     world: World,
     rules: Vec<Rule>,
     by_type: HashMap<TypeId, usize>,
+    clocks: Vec<ClockSpec>,
+    events: Vec<StagedEvent>,
     dependencies: HashMap<Task, HashSet<Fact>>,
     reverse: HashMap<Fact, BTreeSet<Task>>,
     insertions: HashSet<Fact>,
@@ -306,6 +365,39 @@ impl Engine {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Register a typed clock before spawning keys. Each changed clock value
+    /// must advance its positive epoch; removal after initialization is rejected.
+    /// This is input admission, not a separate rule/scheduler programming model.
+    pub fn clock<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+        epoch: impl Fn(&T) -> u64 + 'static,
+    ) -> Result<(), Error> {
+        if !self.world.live.is_empty() {
+            return Err(Error::LateRegistration);
+        }
+        let fact = Fact::of::<T>(key);
+        if self.clocks.iter().any(|clock| clock.fact == fact) {
+            return Err(Error::DuplicateClock);
+        }
+        self.clocks.push(ClockSpec {
+            fact,
+            validate: Rc::new(move |before, after| {
+                let old = before.get::<T>(key);
+                let new = after.get::<T>(key);
+                match (old, new) {
+                    (None, None) => Ok(()),
+                    (Some(previous), Some(current)) if previous == current => Ok(()),
+                    (Some(previous), Some(current)) if epoch(&current) > epoch(&previous) => Ok(()),
+                    (None, Some(current)) if epoch(&current) > 0 => Ok(()),
+                    _ => Err(Error::InvalidClock),
+                }
+            }),
+        });
+        Ok(())
+    }
+
     /// Register a typed, per-key computation. A given output type has one producer.
     /// This first candidate requires registration before the first spawned key.
     pub fn rule<T>(
@@ -389,6 +481,21 @@ impl Engine {
         });
         result
     }
+    /// Ordered occurrences from the last successful commit, including repeated
+    /// values and multiple events per key. A later successful commit clears them.
+    pub fn events<T: Clone + 'static>(&self) -> Vec<Occurrence<T>> {
+        self.events
+            .iter()
+            .filter_map(|event| {
+                event.value.downcast_ref::<T>().map(|value| Occurrence {
+                    source: event.source.key,
+                    ordinal: event.ordinal,
+                    value: value.clone(),
+                })
+            })
+            .collect()
+    }
+
     pub fn last_evaluations(&self) -> usize {
         self.last_evaluations
     }
@@ -404,6 +511,10 @@ impl Engine {
             changed: &mut changes,
             outputs: &self.by_type,
         })?;
+        // Validate all clocks before any (potentially failing) rule executes.
+        for clock in &self.clocks {
+            (clock.validate)(&self.world, &proposed)?;
+        }
 
         // Despawned nodes have no tasks to evaluate in the staged world.
         // Preserve their prior derived values' removal facts explicitly.
@@ -451,6 +562,8 @@ impl Engine {
             previous: &self.world,
             rules: &self.rules,
             by_type: &self.by_type,
+            clocks: &self.clocks,
+            events: Vec::new(),
             invalidated,
             done: BTreeSet::new(),
             visiting: BTreeSet::new(),
@@ -502,13 +615,16 @@ impl Engine {
             world: next_world,
             insertions,
             output_changes,
+            mut events,
             ..
         } = evaluator;
+        events.sort_by_key(|event| (event.source, event.ordinal));
         self.world = next_world;
         self.dependencies = dependencies;
         self.reverse = reverse;
         self.insertions = insertions;
         self.output_changes = output_changes;
+        self.events = events;
         self.last_evaluations = evaluations;
         Ok(())
     }

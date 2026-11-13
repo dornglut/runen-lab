@@ -381,12 +381,18 @@ struct Step {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ContactOccurrence(u64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContactPulse {
+    epoch: u64,
+    pulse: u8,
+}
 
 /// Temporal candidate: *same rule API* as the hierarchy and derived-contact
 /// consumers, but Position itself is rule-owned and reads the prior commit.
 /// An external Step is a typed input change; no promote/copy is needed.
 fn temporal_game() -> Engine {
     let mut game = Engine::new();
+    game.clock::<Step>(CLOCK, |step| step.epoch).unwrap();
     game.rule::<Position>(|ctx, entity| {
         let Some(SpawnPosition(start)) = ctx.get::<SpawnPosition>(entity)? else {
             return Ok(None);
@@ -395,14 +401,11 @@ fn temporal_game() -> Engine {
             return Ok(None);
         };
         let before = ctx.previous::<Position>(entity).unwrap_or(Position(start));
-        let Some(step) = ctx.get::<Step>(CLOCK)? else {
+        let Some(step) = ctx.advanced::<Step>(CLOCK)? else {
             return Ok(Some(before));
         };
-        if ctx.previous::<Position>(entity).is_none()
-            || ctx
-                .previous::<Step>(CLOCK)
-                .is_some_and(|prior| prior.epoch == step.epoch)
-        {
+        // A newly created entity is seeded, not retroactively integrated.
+        if ctx.previous::<Position>(entity).is_none() {
             return Ok(Some(before));
         }
         let delta = velocity.checked_mul(step.dt).ok_or(Error::Overflow)?;
@@ -415,11 +418,18 @@ fn temporal_game() -> Engine {
         let Some(Contact(true)) = ctx.get::<Contact>(entity)? else {
             return Ok(None);
         };
+        // Two separate occurrences from the same key and commit; neither
+        // becomes externally visible if a later rule fails admission.
+        let advanced = ctx.advanced::<Step>(CLOCK)?;
+        if let Some(step) = advanced {
+            ctx.emit(ContactPulse { epoch: step.epoch, pulse: 0 })?;
+            ctx.emit(ContactPulse { epoch: step.epoch, pulse: 1 })?;
+        }
         let Some(step) = ctx.get::<Step>(CLOCK)? else {
             return Ok(None);
         };
         let previous = ctx.previous::<ContactOccurrence>(entity);
-        if ctx.changed::<Step>(CLOCK)?.is_some() || previous.is_none() {
+        if advanced.is_some() || previous.is_none() {
             Ok(Some(ContactOccurrence(step.epoch)))
         } else {
             Ok(previous)
@@ -566,6 +576,103 @@ fn despawn_produces_typed_derived_removal_and_reuse_is_new_occurrence() -> Resul
     assert_eq!(
         game.changes::<ContactOccurrence>(),
         vec![OutputChange::Added(fresh, ContactOccurrence(1)),]
+    );
+    Ok(())
+}
+
+#[test]
+fn clock_admission_rejects_repeats_regressions_removal_and_zero() -> Result<(), Error> {
+    let mut game = temporal_game();
+    game.transact(|tx| tx.spawn(CLOCK))?;
+    assert_eq!(
+        game.transact(|tx| tx.put(CLOCK, Step { epoch: 0, dt: 1 })),
+        Err(Error::InvalidClock)
+    );
+    game.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 1 }))?;
+    // Identical replacement is a legal no-op, not a new step.
+    game.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 1 }))?;
+    assert_eq!(
+        game.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 3 })),
+        Err(Error::InvalidClock)
+    );
+    assert_eq!(
+        game.transact(|tx| tx.put(CLOCK, Step { epoch: 1, dt: 1 })),
+        Err(Error::InvalidClock)
+    );
+    assert_eq!(game.transact(|tx| tx.remove::<Step>(CLOCK)), Err(Error::InvalidClock));
+    assert_eq!(game.transact(|tx| tx.despawn(CLOCK)), Err(Error::InvalidClock));
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 2, dt: 1 }));
+    game.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: 1 }))?;
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 3, dt: 1 }));
+    Ok(())
+}
+
+#[test]
+fn occurrences_preserve_same_key_multiplicity_and_discard_failed_commit() -> Result<(), Error> {
+    use unified_rules::Occurrence;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct FailsOnSecondStep;
+
+    let mut game = temporal_game();
+    // Registered last: after contact occurrences have been staged, its
+    // failure must still discard all candidate output and event changes.
+    game.rule::<FailsOnSecondStep>(|ctx, key| {
+        let Some(Contact(true)) = ctx.get::<Contact>(key)? else {
+            return Ok(None);
+        };
+        if ctx.advanced::<Step>(CLOCK)?.is_some_and(|step| step.epoch == 2) {
+            return Err(Error::Overflow);
+        }
+        Ok(None)
+    })?;
+
+    let a = Key::new(4, 1);
+    let b = Key::new(5, 1);
+    game.transact(|tx| {
+        tx.spawn(CLOCK)?;
+        for key in [b, a] {
+            tx.spawn(key)?;
+            tx.put(key, Contact(true))?;
+        }
+        Ok(())
+    })?;
+    assert!(game.events::<ContactPulse>().is_empty());
+    game.transact(|tx| tx.put(CLOCK, Step { epoch: 1, dt: 1 }))?;
+    let expected = vec![
+        Occurrence { source: a, ordinal: 0, value: ContactPulse { epoch: 1, pulse: 0 } },
+        Occurrence { source: a, ordinal: 1, value: ContactPulse { epoch: 1, pulse: 1 } },
+        Occurrence { source: b, ordinal: 0, value: ContactPulse { epoch: 1, pulse: 0 } },
+        Occurrence { source: b, ordinal: 1, value: ContactPulse { epoch: 1, pulse: 1 } },
+    ];
+    assert_eq!(game.events::<ContactPulse>(), expected);
+    assert_eq!(
+        game.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 1 })),
+        Err(Error::Overflow)
+    );
+    assert_eq!(game.get::<Step>(CLOCK), Some(Step { epoch: 1, dt: 1 }));
+    assert_eq!(game.events::<ContactPulse>(), expected);
+    game.transact(|_| Ok(()))?;
+    assert!(game.events::<ContactPulse>().is_empty());
+    Ok(())
+}
+
+#[test]
+fn clock_contract_requires_registration_and_cannot_be_registered_twice() -> Result<(), Error> {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Unregistered(i32);
+
+    let mut game = Engine::new();
+    game.rule::<Unregistered>(|ctx, key| {
+        let _ = ctx.advanced::<Step>(CLOCK)?;
+        Ok(Some(Unregistered(key.slot as i32)))
+    })?;
+    assert_eq!(game.transact(|tx| tx.spawn(CLOCK)), Err(Error::UnregisteredClock));
+
+    let mut game = temporal_game();
+    assert_eq!(
+        game.clock::<Step>(CLOCK, |step| step.epoch),
+        Err(Error::DuplicateClock)
     );
     Ok(())
 }
