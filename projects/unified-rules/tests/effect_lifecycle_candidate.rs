@@ -202,10 +202,9 @@ fn cancel(engine: &mut Engine, key: Key, revision: u64) -> Result<Decision, Erro
                 },
             )
         })?;
+        let expected = WorkTicket { key, revision };
         for request in engine.pending_effects::<WorkCommand>() {
-            if request.value.ticket == WorkTicket { key, revision }
-                && request.value.kind == CommandKind::Start
-            {
+            if request.value.ticket == expected && request.value.kind == CommandKind::Start {
                 engine.acknowledge_effect(request.id);
             }
         }
