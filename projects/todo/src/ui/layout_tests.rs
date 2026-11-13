@@ -1048,7 +1048,7 @@ fn native_smoke_click_targets() {
     );
     let paging_storage = TodoStorage::at(paging_path.clone());
     let mut paging_service = TodoService::at(paging_storage.clone()).unwrap();
-    for index in 1..=TASKS_PER_PAGE + 1 {
+    for index in 1..=9 {
         paging_service
             .execute(TodoCommand::Add {
                 title: format!("Bulk {index}"),
@@ -1067,7 +1067,7 @@ fn native_smoke_click_targets() {
                 LogicalSize::try_new(800.0, 600.0).unwrap(),
             ))
             .unwrap();
-        let last_toggle = format!("task.{}.toggle", TASKS_PER_PAGE + 1);
+        let last_toggle = String::from("task.9.toggle");
         let targets = if page_index == 0 {
             [
                 ("page-next", "todo.page.next".to_owned()),
