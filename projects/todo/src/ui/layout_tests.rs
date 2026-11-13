@@ -199,6 +199,9 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
         (800.0, 600.0),
         (1280.0, 800.0),
         (1920.0, 1080.0),
+        // Verify the same mounted UI contracts back after widening.
+        (320.0, 568.0),
+        (800.0, 600.0),
     ] {
         let publication = runtime
             .publish_surface(&SurfaceBuildContext::tight(
@@ -223,6 +226,16 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
                 .unwrap_or_else(|| panic!("missing element {id} at {width}x{height}"))
                 .bounds()
         };
+        let page = get("todo.root");
+        assert!(
+            (page.width() - width).abs() <= 1.0,
+            "task content must expand and contract with the actual viewport, not remain capped at its initial size: viewport={width}x{height}, content={page:?}"
+        );
+        let task_row = get("task.3.row");
+        assert!(
+            task_row.width() >= width - 34.0 && task_row.width() <= width,
+            "task card must use available width at {width}x{height}: {task_row:?}"
+        );
         for id in [
             "todo.heading",
             "todo.new-task",
