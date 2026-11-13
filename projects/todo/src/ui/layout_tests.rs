@@ -832,6 +832,7 @@ fn native_smoke_click_targets() {
         ("field", "todo.new-task"),
         ("add", "todo.add"),
         ("toggle", "task.1.toggle"),
+        ("remove", "task.1.remove"),
     ] {
         let rect = publication
             .frame()
@@ -929,5 +930,35 @@ fn native_smoke_click_targets() {
         "published toggle center must activate Complete"
     );
     assert!(TodoStorage::at(path.clone()).load().unwrap().tasks()[0].completed());
+    // The Reopen label has a different width from Complete. Resolve its
+    // actual control center from the completed-state native-font surface.
+    let completed_publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .unwrap();
+    let reopen = completed_publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|authored| authored.as_str() == "task.1.toggle")
+        })
+        .expect("completed task publishes Reopen")
+        .bounds();
+    assert!(
+        reopen.width() >= 12.0
+            && reopen.height() >= 12.0
+            && reopen.x() >= 0.0
+            && reopen.y() >= 0.0
+            && reopen.x() + reopen.width() <= 800.0
+            && reopen.y() + reopen.height() <= 600.0,
+        "Reopen target outside native viewport: {reopen:?}"
+    );
+    let reopen_x = (reopen.x() + reopen.width() / 2.0).round() as u32;
+    let reopen_y = (reopen.y() + reopen.height() / 2.0).round() as u32;
+    println!("TODO_NATIVE_TARGET reopen {reopen_x} {reopen_y}");
     std::fs::remove_file(path).unwrap();
 }

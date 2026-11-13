@@ -90,13 +90,18 @@ try:
     data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     tasks = data["tasks"]
     expected = sys.argv[2]
-    ok = (
-        data["version"] == 1
-        and len(tasks) == 1
-        and tasks[0]["id"] == 1
-        and tasks[0]["title"] == "x11"
-        and tasks[0]["completed"] is (expected == "complete")
-    )
+    if expected == "empty":
+        ok = data["version"] == 1 and data["next_id"] == 2 and tasks == []
+    elif expected in ("open", "complete"):
+        ok = (
+            data["version"] == 1
+            and len(tasks) == 1
+            and tasks[0]["id"] == 1
+            and tasks[0]["title"] == "x11"
+            and tasks[0]["completed"] is (expected == "complete")
+        )
+    else:
+        ok = False
 except (OSError, ValueError, KeyError, TypeError):
     ok = False
 sys.exit(0 if ok else 1)
@@ -171,7 +176,7 @@ while read -r label name x y; do
   target_x["$name"]="$x"
   target_y["$name"]="$y"
 done < "$TODO_NATIVE_TARGETS_FILE"
-for name in field add toggle; do
+for name in field add toggle remove reopen; do
   [[ -n "${target_x[$name]:-}" && -n "${target_y[$name]:-}" ]] || fail "native-geometry-incomplete"
   echo "todo_native_x11=target name=$name x=${target_x[$name]} y=${target_y[$name]}"
 done
@@ -227,8 +232,30 @@ echo "todo_native_x11=pass phase=completed-state-reloaded"
 if ! close_todo after-restart; then
   close_failures=$((close_failures + 1))
 fi
+
+# A fresh persisted completed task must support the genuine Reopen and
+# Remove controls through one original native XTEST click each.
+start_todo
+state_matches "complete" || fail "reopen-restart-lost-completed-state"
+xdotool mousemove --window "$window" "${target_x[reopen]}" "${target_y[reopen]}" click 1
+await_state "open" "reopen-button"
+echo "todo_native_x11=pass phase=native-reopen-persisted"
+xdotool mousemove --window "$window" "${target_x[remove]}" "${target_y[remove]}" click 1
+await_state "empty" "remove-button"
+echo "todo_native_x11=pass phase=native-remove-persisted"
+if ! close_todo after-remove; then
+  close_failures=$((close_failures + 1))
+fi
+
+start_todo
+state_matches "empty" || fail "empty-restart-task-reappeared"
+echo "todo_native_x11=pass phase=removed-state-reloaded"
+if ! close_todo after-empty; then
+  close_failures=$((close_failures + 1))
+fi
+
 if [[ "$close_failures" -ne 0 ]]; then
   echo "todo_native_x11=fail close_methods=$close_failures physical_x11=true mode=release" >&2
   exit 1
 fi
-echo "todo_native_x11=pass physical_x11=true mode=release persistence=true close=true"
+echo "todo_native_x11=pass physical_x11=true mode=release persistence=true reopen=true remove=true close=true"
