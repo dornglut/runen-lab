@@ -78,10 +78,15 @@ impl World {
         let ty = TypeId::of::<T>();
         match value {
             Some(value) => {
-                let col = self.columns.entry(ty)
+                let col = self
+                    .columns
+                    .entry(ty)
                     .or_insert_with(|| Box::new(Values::<T>(BTreeMap::new())));
-                let values = &mut col.as_any_mut().downcast_mut::<Values<T>>()
-                    .expect("type-indexed column").0;
+                let values = &mut col
+                    .as_any_mut()
+                    .downcast_mut::<Values<T>>()
+                    .expect("type-indexed column")
+                    .0;
                 if values.get(&key) == Some(&value) {
                     return false;
                 }
@@ -89,8 +94,12 @@ impl World {
                 true
             }
             None => self.columns.get_mut(&ty).is_some_and(|col| {
-                col.as_any_mut().downcast_mut::<Values<T>>()
-                    .expect("type-indexed column").0.remove(&key).is_some()
+                col.as_any_mut()
+                    .downcast_mut::<Values<T>>()
+                    .expect("type-indexed column")
+                    .0
+                    .remove(&key)
+                    .is_some()
             }),
         }
     }
@@ -103,7 +112,10 @@ struct Fact {
 }
 impl Fact {
     fn of<T: 'static>(key: Key) -> Self {
-        Self { ty: TypeId::of::<T>(), key }
+        Self {
+            ty: TypeId::of::<T>(),
+            key,
+        }
     }
 }
 struct Exists;
@@ -118,8 +130,14 @@ impl Transaction<'_> {
         if self.world.live.contains_key(&key.slot) {
             return Err(Error::InvalidGeneration);
         }
-        let expected = self.world.generation.get(&key.slot).copied()
-            .unwrap_or(0).checked_add(1).ok_or(Error::InvalidGeneration)?;
+        let expected = self
+            .world
+            .generation
+            .get(&key.slot)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(Error::InvalidGeneration)?;
         if key.generation != expected {
             return Err(Error::InvalidGeneration);
         }
@@ -148,7 +166,9 @@ impl Transaction<'_> {
         self.replace::<T>(key, None)
     }
     fn replace<T: Clone + Eq + 'static>(
-        &mut self, key: Key, value: Option<T>,
+        &mut self,
+        key: Key,
+        value: Option<T>,
     ) -> Result<(), Error> {
         if !self.world.contains(key) {
             return Err(Error::MissingEntity);
@@ -186,7 +206,8 @@ struct Evaluator<'r> {
 }
 impl Evaluator<'_> {
     fn evaluate(&mut self, task: Task) -> Result<(), Error> {
-        if !self.world.contains(task.key) || !self.invalidated.contains(&task)
+        if !self.world.contains(task.key)
+            || !self.invalidated.contains(&task)
             || self.done.contains(&task)
         {
             return Ok(());
@@ -196,7 +217,13 @@ impl Evaluator<'_> {
         }
         let function = Rc::clone(&self.rules[task.rule].evaluate);
         let mut reads = HashSet::new();
-        let outcome = function(&mut RuleCx { evaluator: self, reads: &mut reads }, task.key);
+        let outcome = function(
+            &mut RuleCx {
+                evaluator: self,
+                reads: &mut reads,
+            },
+            task.key,
+        );
         self.visiting.remove(&task);
         outcome?;
         self.dependencies.insert(task, reads);
@@ -263,7 +290,10 @@ impl Engine {
             Ok(())
         };
         self.by_type.insert(ty, self.rules.len());
-        self.rules.push(Rule { output: ty, evaluate: Rc::new(callback) });
+        self.rules.push(Rule {
+            output: ty,
+            evaluate: Rc::new(callback),
+        });
         Ok(())
     }
 
@@ -274,7 +304,9 @@ impl Engine {
         self.world.live.values().copied().collect()
     }
     pub fn inserted<T: Clone + Eq + 'static>(&self) -> Vec<(Key, T)> {
-        let mut items: Vec<_> = self.insertions.iter()
+        let mut items: Vec<_> = self
+            .insertions
+            .iter()
             .filter(|fact| fact.ty == TypeId::of::<T>())
             .filter_map(|fact| self.get::<T>(fact.key).map(|value| (fact.key, value)))
             .collect();
@@ -374,7 +406,9 @@ impl Engine {
         To: Clone + Eq + 'static,
         F: Fn(From) -> To,
     {
-        let updates: Vec<_> = self.keys().into_iter()
+        let updates: Vec<_> = self
+            .keys()
+            .into_iter()
             .filter_map(|key| self.get::<From>(key).map(|value| (key, map(value))))
             .collect();
         self.transact(|tx| {

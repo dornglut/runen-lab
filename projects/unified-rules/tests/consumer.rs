@@ -29,45 +29,55 @@ fn new_game() -> Engine {
 
     // Rule 1: pure next-step state. Feedback becomes authoritative only via
     // the explicit epoch-boundary promote() operation, never same-epoch.
-    engine.rule::<NextPosition, _>(|ctx, entity| {
-        let Some(Position(position)) = ctx.get::<Position>(entity)? else {
-            return Ok(None);
-        };
-        let Some(Velocity(velocity)) = ctx.get::<Velocity>(entity)? else {
-            return Ok(None);
-        };
-        let Some(Delta(dt)) = ctx.get::<Delta>(CLOCK)? else {
-            return Ok(None);
-        };
-        let step = velocity.checked_mul(dt).ok_or(Error::Overflow)?;
-        Ok(Some(NextPosition(position.checked_add(step).ok_or(Error::Overflow)?)))
-    }).unwrap();
+    engine
+        .rule::<NextPosition, _>(|ctx, entity| {
+            let Some(Position(position)) = ctx.get::<Position>(entity)? else {
+                return Ok(None);
+            };
+            let Some(Velocity(velocity)) = ctx.get::<Velocity>(entity)? else {
+                return Ok(None);
+            };
+            let Some(Delta(dt)) = ctx.get::<Delta>(CLOCK)? else {
+                return Ok(None);
+            };
+            let step = velocity.checked_mul(dt).ok_or(Error::Overflow)?;
+            Ok(Some(NextPosition(
+                position.checked_add(step).ok_or(Error::Overflow)?,
+            )))
+        })
+        .unwrap();
 
     // Rule 2: same registration path, dynamically keyed parent relation.
     // The runtime resolves parent->child dependency paths and detects cycles.
-    engine.rule::<WorldPosition, _>(|ctx, entity| {
-        let Some(Local(local)) = ctx.get::<Local>(entity)? else {
-            return Ok(None);
-        };
-        let world = if let Some(Parent(parent)) = ctx.get::<Parent>(entity)? {
-            if !ctx.exists(parent) {
-                return Err(Error::InvalidRelationship);
-            }
-            let WorldPosition(ancestor) = ctx.get::<WorldPosition>(parent)?
-                .ok_or(Error::InvalidRelationship)?;
-            ancestor.checked_add(local).ok_or(Error::Overflow)?
-        } else {
-            local
-        };
-        Ok(Some(WorldPosition(world)))
-    }).unwrap();
+    engine
+        .rule::<WorldPosition, _>(|ctx, entity| {
+            let Some(Local(local)) = ctx.get::<Local>(entity)? else {
+                return Ok(None);
+            };
+            let world = if let Some(Parent(parent)) = ctx.get::<Parent>(entity)? {
+                if !ctx.exists(parent) {
+                    return Err(Error::InvalidRelationship);
+                }
+                let WorldPosition(ancestor) = ctx
+                    .get::<WorldPosition>(parent)?
+                    .ok_or(Error::InvalidRelationship)?;
+                ancestor.checked_add(local).ok_or(Error::Overflow)?
+            } else {
+                local
+            };
+            Ok(Some(WorldPosition(world)))
+        })
+        .unwrap();
 
     // Rule 3: another output using exactly the same rule interface.
     // A presence transition None->Some is an observable one-epoch insertion.
-    engine.rule::<ContactStart, _>(|ctx, entity| {
-        Ok(ctx.get::<Contact>(entity)?
-            .and_then(|contact| contact.0.then_some(ContactStart)))
-    }).unwrap();
+    engine
+        .rule::<ContactStart, _>(|ctx, entity| {
+            Ok(ctx
+                .get::<Contact>(entity)?
+                .and_then(|contact| contact.0.then_some(ContactStart)))
+        })
+        .unwrap();
 
     engine
 }
@@ -105,7 +115,10 @@ fn dense_movement_uses_explicit_feedback_without_instantaneous_cycle() -> Result
     game.transact(|tx| tx.put(target, Velocity(99)))?;
     // Only the target's NextPosition computation is invalidated.
     assert_eq!(game.last_evaluations(), 1);
-    assert_eq!(game.get::<NextPosition>(target), Some(NextPosition(43 + 2 * (43 % 7) + 198)));
+    assert_eq!(
+        game.get::<NextPosition>(target),
+        Some(NextPosition(43 + 2 * (43 % 7) + 198))
+    );
     Ok(())
 }
 
@@ -159,7 +172,10 @@ fn dynamic_hierarchy_reparenting_cycle_rejection_and_generation() -> Result<(), 
         tx.put(Key::new(3, 2), Local(7))?;
         Ok(())
     })?;
-    assert_eq!(game.get::<WorldPosition>(Key::new(3, 2)), Some(WorldPosition(7)));
+    assert_eq!(
+        game.get::<WorldPosition>(Key::new(3, 2)),
+        Some(WorldPosition(7))
+    );
     assert_eq!(game.get::<WorldPosition>(camera), None);
     assert_eq!(
         game.transact(|tx| tx.put(weapon, Parent(camera))),
@@ -177,7 +193,10 @@ fn ephemeral_contact_events_once_per_presence_transition() -> Result<(), Error> 
         tx.put(contact, Contact(true))?;
         Ok(())
     })?;
-    assert_eq!(game.inserted::<ContactStart>(), vec![(contact, ContactStart)]);
+    assert_eq!(
+        game.inserted::<ContactStart>(),
+        vec![(contact, ContactStart)]
+    );
     game.transact(|_tx| Ok(()))?;
     assert!(game.inserted::<ContactStart>().is_empty());
     game.transact(|tx| tx.put(contact, Contact(true)))?;
@@ -186,7 +205,10 @@ fn ephemeral_contact_events_once_per_presence_transition() -> Result<(), Error> 
     assert_eq!(game.get::<ContactStart>(contact), None);
     assert!(game.inserted::<ContactStart>().is_empty());
     game.transact(|tx| tx.put(contact, Contact(true)))?;
-    assert_eq!(game.inserted::<ContactStart>(), vec![(contact, ContactStart)]);
+    assert_eq!(
+        game.inserted::<ContactStart>(),
+        vec![(contact, ContactStart)]
+    );
     game.transact(|tx| tx.despawn(contact))?;
     assert!(game.inserted::<ContactStart>().is_empty());
     Ok(())
@@ -201,7 +223,9 @@ struct Dead;
 fn fourth_domain_requires_only_another_rule_and_source_type() -> Result<(), Error> {
     let mut game = new_game();
     game.rule::<Dead, _>(|ctx, key| {
-        Ok(ctx.get::<Health>(key)?.and_then(|hp| (hp.0 <= 0).then_some(Dead)))
+        Ok(ctx
+            .get::<Health>(key)?
+            .and_then(|hp| (hp.0 <= 0).then_some(Dead)))
     })?;
     let id = Key::new(50, 1);
     game.transact(|tx| {
@@ -232,7 +256,8 @@ fn invalid_writes_and_overflow_preserve_visible_world() -> Result<(), Error> {
         game.transact(|tx| tx.put(player, NextPosition(99))),
         Err(Error::DerivedIsReadOnly)
     );
-    game.transact(|tx| tx.put(CLOCK, Delta(i64::MAX))) .err()
+    game.transact(|tx| tx.put(CLOCK, Delta(i64::MAX)))
+        .err()
         .filter(|err| *err == Error::Overflow)
         .ok_or(Error::Overflow)?;
     assert_eq!(game.get::<Delta>(CLOCK), Some(Delta(1)));
@@ -241,6 +266,9 @@ fn invalid_writes_and_overflow_preserve_visible_world() -> Result<(), Error> {
         game.transact(|tx| tx.spawn(player)),
         Err(Error::InvalidGeneration)
     );
-    assert_eq!(game.rule::<Dead, _>(|_, _| Ok(None)), Err(Error::LateRegistration));
+    assert_eq!(
+        game.rule::<Dead, _>(|_, _| Ok(None)),
+        Err(Error::LateRegistration)
+    );
     Ok(())
 }
