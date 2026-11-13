@@ -16,9 +16,7 @@ where
     F: Fn(&A) -> Output + 'static,
 {
     fn install(self, engine: &mut Engine) -> Result<(), Error> {
-        engine.rule::<Output>(move |ctx, key| {
-            Ok(ctx.get::<A>(key)?.map(|a| self(&a)))
-        })
+        engine.rule::<Output>(move |ctx, key| Ok(ctx.get::<A>(key)?.map(|a| self(&a))))
     }
 }
 
@@ -99,9 +97,8 @@ fn ordinary_functions_derive_invoice_values_with_retraction() -> Result<(), Erro
     let mut application = Engine::new();
 
     // No manual query loop, entity-coupled type name, or rule-context bookkeeping.
-    application.derive(|price: &UnitPrice, quantity: &Quantity| {
-        LineSubtotal(price.0 * quantity.0)
-    })?;
+    application
+        .derive(|price: &UnitPrice, quantity: &Quantity| LineSubtotal(price.0 * quantity.0))?;
     application.derive(
         |price: &UnitPrice, quantity: &Quantity, shipping: &Shipping| {
             LineTotal(price.0 * quantity.0 + shipping.0)
@@ -121,12 +118,18 @@ fn ordinary_functions_derive_invoice_values_with_retraction() -> Result<(), Erro
         tx.put(row_b, Shipping(1))?;
         Ok(())
     })?;
-    assert_eq!(application.get::<LineSubtotal>(row_a), Some(LineSubtotal(21)));
+    assert_eq!(
+        application.get::<LineSubtotal>(row_a),
+        Some(LineSubtotal(21))
+    );
     assert_eq!(application.get::<LineTotal>(row_a), Some(LineTotal(23)));
     assert_eq!(application.get::<LineTotal>(row_b), Some(LineTotal(21)));
 
     application.transact(|tx| tx.put(row_a, Quantity(4)))?;
-    assert_eq!(application.get::<LineSubtotal>(row_a), Some(LineSubtotal(28)));
+    assert_eq!(
+        application.get::<LineSubtotal>(row_a),
+        Some(LineSubtotal(28))
+    );
     assert_eq!(application.get::<LineTotal>(row_a), Some(LineTotal(30)));
     assert_eq!(application.get::<LineTotal>(row_b), Some(LineTotal(21)));
 
@@ -160,9 +163,8 @@ struct IsValid(bool);
 fn same_function_contract_derives_document_and_form_values() -> Result<(), Error> {
     let mut application = Engine::new();
     application.derive(|text: &DocumentText| WordCount(text.0.split_whitespace().count()))?;
-    application.derive(|text: &DocumentText, max: &MaxLength| {
-        IsValid(text.0.chars().count() <= max.0)
-    })?;
+    application
+        .derive(|text: &DocumentText, max: &MaxLength| IsValid(text.0.chars().count() <= max.0))?;
 
     let document = Key::new(3, 1);
     application.transact(|tx| {
@@ -186,9 +188,7 @@ fn same_function_contract_derives_document_and_form_values() -> Result<(), Error
 #[test]
 fn global_output_still_requires_an_artificial_record_and_raw_rule_context() -> Result<(), Error> {
     let mut application = Engine::new();
-    application.derive(|price: &UnitPrice, count: &Quantity| {
-        LineSubtotal(price.0 * count.0)
-    })?;
+    application.derive(|price: &UnitPrice, count: &Quantity| LineSubtotal(price.0 * count.0))?;
 
     // This is the *limitation*, not the recommended API: the engine has
     // no distinct notion of unkeyed/global outputs yet.
