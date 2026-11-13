@@ -42,6 +42,30 @@ fail() {
       cat -- "$log" >&2
     fi
   done
+  if [[ -n "$window" ]]; then
+    focused="$(xdotool getwindowfocus 2>/dev/null || true)"
+    echo "todo_native_x11=diagnostic focused_window=$focused expected_window=$window" >&2
+  fi
+  if [[ -f "$RUNEN_LAB_TODO_DATA_FILE" ]]; then
+    python3 - "$RUNEN_LAB_TODO_DATA_FILE" <<'PY' >&2
+import json
+import sys
+from pathlib import Path
+try:
+    state = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    tasks = state.get("tasks", [])
+    print("todo_native_x11=diagnostic data_present=true"
+          f" version={state.get('version')} next_id={state.get('next_id')}"
+          f" count={len(tasks)}"
+          f" ids={[task.get('id') for task in tasks if isinstance(task, dict)]}"
+          f" bytes={[len(task.get('title', '').encode('utf-8')) for task in tasks if isinstance(task, dict) and isinstance(task.get('title'), str)]}"
+          f" completed={[task.get('completed') for task in tasks if isinstance(task, dict)]}")
+except (OSError, ValueError, KeyError, TypeError) as error:
+    print(f"todo_native_x11=diagnostic persisted_state_unreadable type={type(error).__name__}")
+PY
+  else
+    echo "todo_native_x11=diagnostic data_present=false" >&2
+  fi
   if [[ -f "$scratch/openbox.log" ]]; then
     echo "=== X11 window-manager log ===" >&2
     tail -n 30 "$scratch/openbox.log" >&2
@@ -195,6 +219,7 @@ assert_alive "text-field-press"
 xdotool type --clearmodifiers --delay 80 "x11"
 sleep 1
 assert_alive "text-input"
+echo "todo_native_x11=diagnostic before-add-focus=$(xdotool getwindowfocus 2>/dev/null || true) expected_window=$window"
 xdotool mousemove --window "$window" "${target_x[add]}" "${target_y[add]}" click 1
 await_state "open" "add-button"
 echo "todo_native_x11=pass phase=create-input-and-persist"

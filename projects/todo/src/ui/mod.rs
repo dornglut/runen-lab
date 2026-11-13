@@ -44,6 +44,12 @@ fn ui_font(size: u16, bold: bool) -> Typography {
     }
 }
 
+// Opt-in, content-free native interaction diagnostics. This does not change
+// RunenUI's M13 receipt, document, or event ownership.
+fn diagnostics_enabled() -> bool {
+    std::env::var_os("RUNEN_LAB_TODO_DIAGNOSTICS").is_some()
+}
+
 pub struct TodoUi;
 
 pub struct TodoUiState {
@@ -471,12 +477,34 @@ impl UiApp for TodoUi {
                 state.draft_selection = next_selection;
                 state.draft_revision += 1;
                 state.error = None;
+                if diagnostics_enabled() {
+                    eprintln!(
+                        "todo.editor: accepted revision={} draft_bytes={}",
+                        state.draft_revision,
+                        state.draft.len()
+                    );
+                }
                 UpdateOutput::edit(EditResolution::accepted(request, state.draft_snapshot()))
             }
             TodoAction::AddTask => {
+                if diagnostics_enabled() {
+                    eprintln!(
+                        "todo.action: add-start revision={} draft_bytes={}",
+                        state.draft_revision,
+                        state.draft.len()
+                    );
+                }
                 let created = state.execute(TodoCommand::Add {
                     title: state.draft.clone(),
                 });
+                if diagnostics_enabled() {
+                    eprintln!(
+                        "todo.action: add-result persisted={} task_count={} error_present={}",
+                        created,
+                        state.service.tasks().len(),
+                        state.error.is_some()
+                    );
+                }
                 if created {
                     state.page_index = (state.service.tasks().len() - 1) / TASKS_PER_PAGE;
                     state.draft.clear();

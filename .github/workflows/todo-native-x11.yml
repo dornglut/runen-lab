@@ -88,6 +88,7 @@ jobs:
       - name: Run original X11 mouse and keyboard interaction
         env:
           RUST_BACKTRACE: "1"
+          RUNEN_LAB_TODO_DIAGNOSTICS: "1"
         run: |
           set -euo pipefail
           timeout 150s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \

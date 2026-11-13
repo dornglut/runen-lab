@@ -30,7 +30,11 @@ committed. Task-operation and persistence errors appear in the UI instead of sil
 Out-of-range or invalid text-edit proposals are rejected by the editor contract and logged
 to stderr as `todo.editor` diagnostics, without being represented as storage errors.
 Capture diagnostics from a terminal when reporting input trouble; they do not
-contain the task text.
+contain the task text. For additional content-free native interaction diagnostics,
+set `RUNEN_LAB_TODO_DIAGNOSTICS=1` before running the application; it reports
+accepted edit revision/byte counts and Add dispatch/persistence outcomes without
+logging entered text. On PowerShell, redirect the console through
+`Tee-Object -FilePath` to copy the evidence.
 
 The UI displays at most **8 task rows per page**, with Previous/Next navigation
 when more tasks exist. This bounds the mounted RunenUI tree and routed input budget
