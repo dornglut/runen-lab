@@ -22,6 +22,7 @@ pub const SPACE_1: u16 = 4;
 pub const SPACE_2: u16 = 8;
 pub const SPACE_3: u16 = 12;
 pub const SPACE_4: u16 = 16;
+pub const SPACE_5: u16 = 20;
 
 pub fn insets(horizontal: u16, vertical: u16) -> EdgeInsets {
     EdgeInsets::symmetric(
