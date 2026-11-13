@@ -816,7 +816,11 @@ mod tests {
             .iter()
             .map(|task| task.id().get())
             .collect::<Vec<_>>();
-        assert_eq!(ids, vec![1, 3, 4, 5, 6, 7]);
+        let expected = [1, 3, 4, 5, 6, 7, 8]
+            .into_iter()
+            .take(TASKS_PER_PAGE)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
 
         let _ = TodoUi::update(&mut state, TodoAction::NextPage);
         assert_eq!(state.page_index, 1);
