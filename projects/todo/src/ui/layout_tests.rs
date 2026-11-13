@@ -268,6 +268,84 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
 }
 
 #[test]
+fn short_viewport_scrolls_with_original_runenui_wheel_input() {
+    use runenui_core::{
+        LogicalDelta, LogicalPoint, PointerDeviceKind, PointerEvent, PointerId, PointerPhase,
+    };
+
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-wheel-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "wheel fixture must be isolated");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage).unwrap();
+    for number in 1..=6 {
+        service
+            .execute(TodoCommand::Add {
+                title: format!("Wheel task {number}"),
+            })
+            .unwrap();
+    }
+    let mut runtime = AppRuntime::<TodoUi>::mount(TodoUiState::new(service)).unwrap();
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let build = SurfaceBuildContext::tight(
+        &style,
+        LogicalSize::try_new(320.0, 400.0).unwrap(),
+    );
+    let publication = runtime.publish_surface(&build).unwrap();
+    let root_id = publication.frame().root().unwrap().id().clone();
+    let layout = publication.layout_report().root().unwrap();
+    assert!(
+        layout.scrollable_extent().height() > layout.scroll_viewport_extent().height(),
+        "fixture must genuinely overflow the viewport"
+    );
+    let scroll_y = |runtime: &AppRuntime<TodoUi>| {
+        runtime
+            .index()
+            .nodes()
+            .iter()
+            .find(|node| node.id() == &root_id)
+            .expect("same mounted scroll owner")
+            .interaction()
+            .scroll_offset()
+            .1
+    };
+    assert_eq!(scroll_y(&runtime), 0.0);
+
+    let event = PointerEvent::new(
+        PointerId::new(299).unwrap(),
+        PointerDeviceKind::Mouse,
+        PointerPhase::Wheel,
+        LogicalPoint::new(120.0, 280.0).unwrap(),
+        publication.input_context().clone(),
+    )
+    .with_scroll_delta(LogicalDelta::new(0.0, 75.0).unwrap());
+    runtime.submit_pointer(event).unwrap();
+    runtime
+        .pump(runenui_runtime::PumpBudget::new(
+            usize::MAX,
+            usize::MAX,
+            usize::MAX,
+            usize::MAX,
+        ))
+        .unwrap();
+    assert!(
+        scroll_y(&runtime) > 0.0,
+        "RunenUI wheel interaction must move Todo's own scroll offset"
+    );
+    runtime.publish_surface(&build).unwrap();
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn actual_todo_add_button_preserves_m13_pointer_settlement() {
     use runenui_core::{
         InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
