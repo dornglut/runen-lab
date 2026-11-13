@@ -201,8 +201,7 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
         let frame = publication.frame();
         let root = frame.root().expect("Todo root is published").bounds();
         assert!(
-            root.width() > 0.0 && root.width() <= width
-                && (root.height() - height).abs() <= 1.0,
+            root.width() > 0.0 && root.width() <= width && (root.height() - height).abs() <= 1.0,
             "root fills the available viewport height and respects its width: {width}x{height}, {root:?}"
         );
         let get = |id: &str| {
@@ -226,8 +225,7 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
         ] {
             let rect = get(id);
             assert!(
-                rect.x() >= 0.0 && rect.width() > 0.0
-                    && rect.x() + rect.width() <= width + 1.0,
+                rect.x() >= 0.0 && rect.width() > 0.0 && rect.x() + rect.width() <= width + 1.0,
                 "control must remain reachable without horizontal clipping: {id} at {width}x{height}: {rect:?}"
             );
         }
