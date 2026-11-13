@@ -659,7 +659,6 @@ fn despawned_generational_key_cannot_receive_a_late_completion() -> Result<(), E
     Ok(())
 }
 
-
 #[test]
 fn obsolete_queued_requests_retire_before_dispatch_without_leaking_outbox() -> Result<(), Error> {
     let mut engine = app()?;
