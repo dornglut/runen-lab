@@ -550,8 +550,10 @@ impl UiApp for TodoUi {
                         FlexContainerStyle::default().with_direction(FlexDirection::Column),
                     ))
                     .with_gap(LogicalLength::from(theme::SPACE_3))
-                    .with_width(LayoutDimension::Fill)
-                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
+                    // The task page follows the viewport width; fixed
+                    // max-width prevented wide-window resizing from visibly
+                    // changing any of the task controls.
+                    .with_width(LayoutDimension::Fill),
             )
             .foreground(theme::TEXT);
         scroll_viewport(
