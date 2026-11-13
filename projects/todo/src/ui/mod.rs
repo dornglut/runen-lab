@@ -59,6 +59,19 @@ fn vertically_centered_row_layout() -> LayoutStyle {
         .with_gap(LogicalLength::from(theme::SPACE_3))
 }
 
+fn wrapping_task_row_layout() -> LayoutStyle {
+    // Narrow windows may need a second line for actions. Keep layout owner
+    // and task identity unchanged; only cross-axis geometry may reflow.
+    LayoutStyle::default()
+        .with_container(LayoutContainer::Flex(
+            FlexContainerStyle::default()
+                .with_direction(FlexDirection::Row)
+                .with_align_items(ItemAlignment::Center)
+                .with_wrap(FlexWrap::Wrap),
+        ))
+        .with_gap(LogicalLength::from(theme::SPACE_3))
+}
+
 fn wrapping_controls_layout(gap: u16) -> LayoutStyle {
     // Let available width determine when controls wrap. No device or viewport
     // breakpoint, and no alternate event/interaction ownership.
@@ -463,7 +476,7 @@ impl UiApp for TodoUi {
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                     ])
-                    .with_layout(vertically_centered_row_layout())
+                    .with_layout(wrapping_task_row_layout())
                     .background(if done { theme::SURFACE } else { theme::TASK })
                     .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                     .radius(theme::radius(theme::SPACE_3))
