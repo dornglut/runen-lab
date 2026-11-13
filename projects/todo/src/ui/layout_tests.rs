@@ -1164,7 +1164,13 @@ fn native_smoke_click_targets() {
         assert!(matches!(exact[0], UiInputFinality::Committed(_)));
     }
     assert!(runtime.state().service.tasks().is_empty());
-    assert!(TodoStorage::at(path.clone()).load().unwrap().tasks().is_empty());
+    assert!(
+        TodoStorage::at(path.clone())
+            .load()
+            .unwrap()
+            .tasks()
+            .is_empty()
+    );
     // Separate native-font publications for both pages prove that original
     // OS clicks have reachable targets after paging without relying on a
     // fixed pixel offset or an artificial title width.
