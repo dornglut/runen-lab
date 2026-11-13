@@ -784,7 +784,7 @@ mod tests {
             .iter()
             .map(|task| task.id().get())
             .collect::<Vec<_>>();
-        assert_eq!(ids, vec![1, 3, 4, 5, 6, 7, 8, 2]);
+        assert_eq!(ids, vec![1, 3, 4, 5, 6, 7]);
 
         let _ = TodoUi::update(&mut state, TodoAction::NextPage);
         assert_eq!(state.page_index, 1);
@@ -802,7 +802,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), before_filter);
         let _ = TodoUi::update(&mut state, TodoAction::SetFilter(TaskFilter::Active));
         assert_eq!(state.filtered_count(), 7);
-        assert_eq!(state.page_count(), 1);
+        assert_eq!(state.page_count(), 2);
         assert_eq!(std::fs::read(&path).unwrap(), before_filter);
 
         // Completing an active task drops it from Active while persisting the
