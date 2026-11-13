@@ -50,7 +50,7 @@ All groups active tasks ahead of completed tasks, separated by a heading;
 each filter has its own page index reset. Filtering never mutates saved data.
 Completing a task in Active immediately hides it there; Reopen in Completed
 moves it back to Active. Adding from Completed switches to Active.
-The UI displays at most **6 task rows per filtered page**, with Previous/Next
+The UI displays at most **5 task rows per filtered page**, with Previous/Next
 navigation when more tasks exist. This bounds the mounted RunenUI tree independently
 of the model's 10,000-task storage limit. All task IDs and persistence remain
 application-owned.
@@ -74,7 +74,7 @@ application owner, not independently modify its backing file.
 The interface uses RunenUI's public layout and style primitives, with
 an application-owned, accessible-contrast ink/slate palette and mint primary
 action accent. A consistent 4/8/12/16 spacing scale separates the heading,
-composer, filter controls, list cards, and pagination. Six task rows per
+composer, filter controls, list cards, and pagination. Five task rows per
 filtered page bound work; long labels, physical font variations, and window
 resizing still require native visual verification. No separate UI toolkit
 or framework fork is involved.
