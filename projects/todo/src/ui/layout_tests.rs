@@ -967,7 +967,10 @@ fn native_smoke_click_targets() {
         "runen-lab-todo-native-pages-{}.json",
         std::process::id()
     ));
-    assert!(!paging_path.exists(), "native paging fixture must be isolated");
+    assert!(
+        !paging_path.exists(),
+        "native paging fixture must be isolated"
+    );
     let paging_storage = TodoStorage::at(paging_path.clone());
     let mut paging_service = TodoService::at(paging_storage.clone()).unwrap();
     for index in 1..=TASKS_PER_PAGE + 1 {
