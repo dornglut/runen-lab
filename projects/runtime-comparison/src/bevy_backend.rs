@@ -24,12 +24,16 @@ struct PacketComponent(Packet);
 #[derive(Resource, Default)]
 struct Published(BTreeMap<Entity, (Key, Packet)>);
 
+type ChangedObjectData = (
+    &'static ObjectRecord,
+    &'static MaterialOf,
+    &'static mut PacketComponent,
+);
+type ChangedObjectFilter = Or<(Changed<ObjectRecord>, Changed<MaterialOf>)>;
+
 fn changed_objects(
     materials: Query<&MaterialColor>,
-    mut objects: Query<
-        (&ObjectRecord, &MaterialOf, &mut PacketComponent),
-        Or<(Changed<ObjectRecord>, Changed<MaterialOf>)>,
-    >,
+    mut objects: Query<ChangedObjectData, ChangedObjectFilter>,
 ) {
     for (obj, relation, mut output) in &mut objects {
         let color = materials.get(relation.0).expect("validated material").0;

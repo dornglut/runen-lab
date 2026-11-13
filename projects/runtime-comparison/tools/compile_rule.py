@@ -39,13 +39,18 @@ pub fn update_inverse(
     before: Option<(Key, Obj)>,
     after: Option<(Key, Obj)>,
 ) {
-    if let (Some((old_key, old)), Some((new_key, new))) = (before, after) {
-        if old_key == new_key && old.material == new.material { return; }
+    if let (Some((old_key, old)), Some((new_key, new))) = (before, after)
+        && old_key == new_key
+        && old.material == new.material
+    {
+        return;
     }
-    if let Some((key, old)) = before {
-        if let Some(users) = index.get_mut(&old.material) {
-            users.remove(&key);
-            if users.is_empty() { index.remove(&old.material); }
+    if let Some((key, old)) = before
+        && let Some(users) = index.get_mut(&old.material)
+    {
+        users.remove(&key);
+        if users.is_empty() {
+            index.remove(&old.material);
         }
     }
     if let Some((key, new)) = after {

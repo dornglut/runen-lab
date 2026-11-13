@@ -1,5 +1,5 @@
-//! Uncompiled research candidate: strict three-way semantic replay.
-//! Not a performance comparison; see README.md before using results.
+//! Three-way deterministic Rust semantic replay using independent reference fixtures.
+//! Not a performance comparison; see README.md for limitations.
 mod bevy_backend;
 mod contract;
 mod generated;
@@ -65,16 +65,26 @@ impl Consumer for RunenBackend {
     }
 }
 
+struct Outcome<'a> {
+    accepted: bool,
+    epoch: u64,
+    error: Option<&'a str>,
+    lineno: usize,
+}
+
 fn check_result(
     backend: &dyn Consumer,
     initial: &Data,
     expected: &Expected,
     prior_packets: &BTreeMap<Key, Packet>,
-    accepted: bool,
-    epoch: u64,
-    error: Option<&str>,
-    lineno: usize,
+    outcome: Outcome<'_>,
 ) {
+    let Outcome {
+        accepted,
+        epoch,
+        error,
+        lineno,
+    } = outcome;
     let state = backend.data();
     let packets = backend.packets();
     assert_eq!(state, *initial, "{} state at {lineno}", backend.label());
@@ -160,10 +170,12 @@ pub fn replay(text: &str) -> usize {
                         &plan.data,
                         &case.expect,
                         &before,
-                        true,
-                        epoch + 1,
-                        None,
-                        lineno,
+                        Outcome {
+                            accepted: true,
+                            epoch: epoch + 1,
+                            error: None,
+                            lineno,
+                        },
                     );
                 }
                 state = plan.data;
@@ -178,10 +190,12 @@ pub fn replay(text: &str) -> usize {
                         &state,
                         &case.expect,
                         &before,
-                        false,
-                        epoch,
-                        Some(cause),
-                        lineno,
+                        Outcome {
+                            accepted: false,
+                            epoch,
+                            error: Some(cause),
+                            lineno,
+                        },
                     );
                 }
                 (false, Some(cause))
