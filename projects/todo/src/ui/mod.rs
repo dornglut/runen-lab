@@ -8,7 +8,8 @@ use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
     EditIntent, EditResolution, Effects, Element, FlexContainerStyle, FlexDirection, FlexItemStyle,
-    FontFamily, FontWeight, GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutContainer,
+    FontFamily, FontWeight, GenericFontFamily, IntoUpdateOutput, ItemAlignment, LayoutBound,
+    LayoutContainer,
     LayoutDimension, LayoutFactor, LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget,
     SemanticEditableMode, TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot,
     TextPosition, TextSelection, Typography, UiApp, UpdateOutput, View, WorkResidencyBudget,
@@ -417,6 +418,7 @@ impl UiApp for TodoUi {
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                         text(task.title())
+                            .id(format!("task.{}.title", id.get()))
                             .key(format!("task.{}.title", id.get()))
                             .foreground(if done { theme::MUTED } else { theme::TEXT })
                             .typography(ui_font(14, false))
@@ -435,7 +437,18 @@ impl UiApp for TodoUi {
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                     ])
-                    .gap(LogicalLength::from(theme::SPACE_3))
+                    // Center the intrinsic title text box against the action
+                    // buttons. The default Flex Stretch makes the title box
+                    // full-height while its glyphs remain top-aligned.
+                    .with_layout(
+                        LayoutStyle::default()
+                            .with_container(LayoutContainer::Flex(
+                                FlexContainerStyle::default()
+                                    .with_direction(FlexDirection::Row)
+                                    .with_align_items(ItemAlignment::Center),
+                            ))
+                            .with_gap(LogicalLength::from(theme::SPACE_3)),
+                    )
                     .background(if done { theme::SURFACE } else { theme::TASK })
                     .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                     .radius(theme::radius(theme::SPACE_3))
