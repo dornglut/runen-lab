@@ -230,6 +230,9 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
             "todo.filter.all",
             "todo.filter.active",
             "todo.filter.completed",
+            "todo.page.previous",
+            "todo.page.label",
+            "todo.page.next",
         ] {
             let rect = get(id);
             assert!(
@@ -261,6 +264,21 @@ fn responsive_layout_reflows_and_exposes_scroll_extent_across_viewport_sizes() {
                 left.x() + left.width() <= right.x() + 1.0
                     || left.y() + left.height() <= right.y() + 1.0,
                 "filters must wrap rather than overlap at {width}x{height}: {left:?} {right:?}"
+            );
+        }
+
+        let pager = [
+            get("todo.page.previous"),
+            get("todo.page.label"),
+            get("todo.page.next"),
+        ];
+        for pair in pager.windows(2) {
+            let left = pair[0];
+            let right = pair[1];
+            assert!(
+                left.x() + left.width() <= right.x() + 1.0
+                    || left.y() + left.height() <= right.y() + 1.0,
+                "pagination must reflow rather than overlap at {width}x{height}: {left:?} {right:?}"
             );
         }
 
