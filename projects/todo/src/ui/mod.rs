@@ -47,21 +47,10 @@ fn ui_font(size: u16, bold: bool) -> Typography {
     }
 }
 
-fn vertically_centered_row_layout() -> LayoutStyle {
-    // with_layout replaces the complete authored style; include both the
-    // horizontal Flex container and its gap to retain cross-axis alignment.
-    LayoutStyle::default()
-        .with_container(LayoutContainer::Flex(
-            FlexContainerStyle::default()
-                .with_direction(FlexDirection::Row)
-                .with_align_items(ItemAlignment::Center),
-        ))
-        .with_gap(LogicalLength::from(theme::SPACE_3))
-}
-
-fn wrapping_task_row_layout() -> LayoutStyle {
-    // Narrow windows may need a second line for actions. Keep layout owner
-    // and task identity unchanged; only cross-axis geometry may reflow.
+fn wrapping_centered_row_layout() -> LayoutStyle {
+    // Preserve centered labels on wide windows, and reflow task/pagination
+    // actions onto another line if the available width is insufficient.
+    // with_layout replaces the entire container style, including Flex/gap.
     LayoutStyle::default()
         .with_container(LayoutContainer::Flex(
             FlexContainerStyle::default()
@@ -476,7 +465,7 @@ impl UiApp for TodoUi {
                             .radius(theme::radius(theme::SPACE_2))
                             .into_element(),
                     ])
-                    .with_layout(wrapping_task_row_layout())
+                    .with_layout(wrapping_centered_row_layout())
                     .background(if done { theme::SURFACE } else { theme::TASK })
                     .padding(theme::insets(theme::SPACE_3, theme::SPACE_2))
                     .radius(theme::radius(theme::SPACE_3))
@@ -529,7 +518,7 @@ impl UiApp for TodoUi {
                         .radius(theme::radius(theme::SPACE_2))
                         .into_element(),
                 ])
-                .with_layout(vertically_centered_row_layout())
+                .with_layout(wrapping_centered_row_layout())
                 .key("todo.page.row")
                 .into_element(),
             );
