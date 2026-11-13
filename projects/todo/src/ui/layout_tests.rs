@@ -781,6 +781,65 @@ fn persisted_full_page_mounts_bounded_ui_and_pagination_without_truncating_stora
 }
 
 #[test]
+fn mixed_active_and_completed_page_keeps_navigation_visible() {
+    let path = std::env::temp_dir().join(format!(
+        "runen-lab-todo-mixed-page-{}.json",
+        std::process::id()
+    ));
+    assert!(!path.exists(), "mixed-page fixture must be isolated");
+    let storage = TodoStorage::at(path.clone());
+    let mut service = TodoService::at(storage.clone()).unwrap();
+    for index in 0..=TASKS_PER_PAGE {
+        service
+            .execute(TodoCommand::Add {
+                title: format!("Task {index}"),
+            })
+            .unwrap();
+    }
+    for task in service.tasks().iter().take(2).map(|task| task.id()).collect::<Vec<_>>() {
+        service
+            .execute(TodoCommand::SetCompleted {
+                id: task,
+                completed: true,
+            })
+            .unwrap();
+    }
+    let state = TodoUiState::new(TodoService::at(storage).unwrap());
+    assert_eq!(state.visible_tasks().len(), TASKS_PER_PAGE);
+    let mut runtime = AppRuntime::<TodoUi>::mount(state).unwrap();
+    assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
+    runtime
+        .set_text_generic_family_mapping(
+            GenericFontFamily::SansSerif,
+            &[FontFamilyName::new("Cantarell").unwrap()],
+        )
+        .unwrap();
+    let style = runenui_core::StyleEnvironment::default();
+    let publication = runtime
+        .publish_surface(&SurfaceBuildContext::tight(
+            &style,
+            LogicalSize::try_new(800.0, 600.0).unwrap(),
+        ))
+        .unwrap();
+    let next = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.page.next")
+        })
+        .expect("mixed completed section must keep paging visible")
+        .bounds();
+    assert!(
+        next.y() + next.height() <= 584.0,
+        "mixed-status list and Next must leave the 16px viewport bottom padding: {next:?}"
+    );
+    assert_eq!(service.tasks().len(), TASKS_PER_PAGE + 1);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
     use runenui_core::{
         InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
