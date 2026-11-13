@@ -541,6 +541,7 @@ impl UiApp for TodoUi {
         // content extents but does not guarantee wheel input reaches an owner.
         // with_layout replaces the entire style, including Flex/overflow.
         let page = column(content)
+            .id("todo.root")
             .key("todo.root")
             .padding(theme::all(theme::SPACE_4))
             .background(theme::CANVAS)
