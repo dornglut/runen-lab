@@ -28,6 +28,13 @@ Enter a title and press Enter or select **Add**. Each task has a **Complete** / 
 control and **Remove**. Changes are validated and saved before the in-memory task state is
 committed. Errors appear in the UI instead of silently erasing saved state.
 
+The UI displays at most **16 task rows per page**, with Previous/Next navigation
+when more tasks exist. This bounds the mounted RunenUI tree and routed input budget
+independently of the model's 10,000-task storage limit. Navigating pages does not
+modify the saved tasks; adding a task selects its page, and removal clamps the
+current page if necessary. All task IDs and persistence remain application-owned.
+This is ordinary Todo-local pagination, **not** a virtualized RunenUI framework API.
+
 Task data is written to a per-user location:
 
 - Windows: `%APPDATA%\RunenLab\Todo\tasks.json`
