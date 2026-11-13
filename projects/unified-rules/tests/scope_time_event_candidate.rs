@@ -315,7 +315,6 @@ fn independent_time_oracle_over_many_epochs_and_edits() -> Result<(), Error> {
     Ok(())
 }
 
-
 #[test]
 fn registration_freezes_after_first_successful_commit_even_without_entities() -> Result<(), Error> {
     let mut unvalidated_clock = Engine::new();
@@ -346,7 +345,10 @@ fn registration_freezes_after_first_successful_commit_even_without_entities() ->
     );
 
     let mut rolled_back = Engine::new();
-    assert_eq!(rolled_back.transact(|_| Err(Error::Overflow)), Err(Error::Overflow));
+    assert_eq!(
+        rolled_back.transact(|_| Err(Error::Overflow)),
+        Err(Error::Overflow)
+    );
     // A rejected edit does not freeze a previously uninitialized engine.
     rolled_back.clock_in::<One<Step>>((), |value| value.epoch)?;
     rolled_back.transact(|tx| tx.put_singleton(Step { epoch: 1, dt: 1 }))?;
