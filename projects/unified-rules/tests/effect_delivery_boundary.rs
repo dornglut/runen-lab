@@ -141,14 +141,23 @@ fn modeled_atomic_state_and_outbox_cover_crash_before_and_after_commit() -> Resu
     // survives because it shares the modeled atomic checkpoint.
     let mut recovered = ModeledAtomicStore::restore(snapshot);
     assert_eq!(recovered.checkpoint.business.get(&7), Some(&20));
-    assert_eq!(recovered.checkpoint.pending.get(&FIRST), Some(&command(FIRST, 20)));
+    assert_eq!(
+        recovered.checkpoint.pending.get(&FIRST),
+        Some(&command(FIRST, 20))
+    );
 
     // A rejected transaction cannot publish either domain state or intent.
     let before = recovered.checkpoint.clone();
     assert_eq!(
         recovered.transact(|next| {
             next.business.insert(7, 99);
-            next.stage(command(IntentId { operation: 7, occurrence: 2 }, 99))?;
+            next.stage(command(
+                IntentId {
+                    operation: 7,
+                    occurrence: 2,
+                },
+                99,
+            ))?;
             Err(ModelError::RejectedTransaction)
         }),
         Err(ModelError::RejectedTransaction)
@@ -168,7 +177,11 @@ fn dispatch_before_ack_can_repeat_without_sink_idempotency() -> Result<(), Model
     unsafe_sink.deliver_unprotected(request);
     // Crash occurs after external execution but before persistent ack.
     let recovered = ModeledAtomicStore::restore(saved.clone());
-    let replay = *recovered.checkpoint.pending.get(&FIRST).expect("still pending");
+    let replay = *recovered
+        .checkpoint
+        .pending
+        .get(&FIRST)
+        .expect("still pending");
     unsafe_sink.deliver_unprotected(replay);
     assert_eq!(unsafe_sink.attempts, 2);
     assert_eq!(unsafe_sink.physically_executed.len(), 2);
@@ -190,7 +203,8 @@ fn dispatch_before_ack_can_repeat_without_sink_idempotency() -> Result<(), Model
 }
 
 #[test]
-fn stable_business_occurrence_keys_dedupe_retries_but_preserve_new_occurrences() -> Result<(), ModelError> {
+fn stable_business_occurrence_keys_dedupe_retries_but_preserve_new_occurrences()
+-> Result<(), ModelError> {
     let mut store = ModeledAtomicStore::default();
     store.transact(|next| next.stage(command(FIRST, 20)))?;
 
@@ -215,10 +229,16 @@ fn stable_business_occurrence_keys_dedupe_retries_but_preserve_new_occurrences()
     assert_eq!(store.checkpoint, before);
 
     // A genuinely later business occurrence needs a different identity.
-    let later = IntentId { operation: 7, occurrence: 2 };
+    let later = IntentId {
+        operation: 7,
+        occurrence: 2,
+    };
     store.transact(|next| next.stage(command(later, 20)))?;
     assert_eq!(store.checkpoint.pending.len(), 1);
-    assert_eq!(store.checkpoint.pending.get(&later), Some(&command(later, 20)));
+    assert_eq!(
+        store.checkpoint.pending.get(&later),
+        Some(&command(later, 20))
+    );
     Ok(())
 }
 
