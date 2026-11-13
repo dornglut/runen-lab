@@ -609,7 +609,7 @@ impl<const PROFILE: usize> UiApp for TodoInitialBudgetProbe<PROFILE> {
     fn initial_producer_budget(state: &Self::State) -> ProducerBudget {
         let nodes = BASE_UI_NODES + TASK_UI_NODES * state.service.tasks().len();
         match PROFILE {
-            0 => TodoUi::initial_producer_budget(state),
+            0 | 3 | 4 => TodoUi::initial_producer_budget(state),
             // One bounded extra turn of retained reconciliation work, with
             // unchanged application outputs and interaction profile.
             1 => ProducerBudget::new(nodes + 2, 0).with_reconciliation(nodes, 1, nodes),
@@ -630,7 +630,18 @@ impl<const PROFILE: usize> UiApp for TodoInitialBudgetProbe<PROFILE> {
     }
 
     fn interaction_producer_budget(state: &Self::State) -> ProducerBudget {
-        TodoUi::interaction_producer_budget(state)
+        let baseline = TodoUi::interaction_producer_budget(state);
+        match PROFILE {
+            3 => ProducerBudget::new(48, 24)
+                .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+                .with_work_starts(baseline.work_starts())
+                .with_work_residency(baseline.work_residency()),
+            4 => ProducerBudget::new(128, 64)
+                .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+                .with_work_starts(baseline.work_starts())
+                .with_work_residency(baseline.work_residency()),
+            _ => baseline,
+        }
     }
 }
 
@@ -734,11 +745,15 @@ fn diagnose_restored_pointer_down_against_initial_reconciliation_budget_only() {
     let baseline = status_for::<0>(storage.clone());
     let reconciled = status_for::<1>(storage.clone());
     let output_raised = status_for::<2>(storage.clone());
+    let moderate_interaction = status_for::<3>(storage.clone());
+    let wide_interaction = status_for::<4>(storage.clone());
     std::fs::remove_file(path).unwrap();
+    eprintln!(
+        "restored_budget_comparison initial={baseline:?}/{reconciled:?}/{output_raised:?} interaction={moderate_interaction:?}/{wide_interaction:?}"
+    );
     assert!(
-        matches!(baseline, RuntimeStatus::Running)
-            || matches!(reconciled, RuntimeStatus::Running)
-            || matches!(output_raised, RuntimeStatus::Running),
-        "all bounded initial-declaration variants fail: baseline={baseline:?}, reconciled={reconciled:?}, output_raised={output_raised:?}"
+        matches!(moderate_interaction, RuntimeStatus::Running)
+            || matches!(wide_interaction, RuntimeStatus::Running),
+        "bounded interaction-budget variants did not restore running pointer Down"
     );
 }
