@@ -2,6 +2,7 @@
 use crate::contract::{Data, Dirty, Key, Obj, Packet, packet};
 use runen_ecs::prelude::*;
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 #[derive(Component, Clone, Copy, Eq, PartialEq)]
 struct ObjectRecord {
@@ -214,6 +215,26 @@ impl RunenBackend {
         self.runtime
             .run_schedule::<Update>(&mut self.world)
             .expect("schedule");
+    }
+
+    /// Isolates resource publication from serial schedule execution for a no-op.
+    /// The schedule still runs the real systems and queries; this is not a pure
+    /// scheduler-only microbenchmark.
+    pub fn profile_noop_schedule(&mut self, iterations: usize) -> (u128, u128) {
+        let mut resource_ns = 0;
+        let mut schedule_ns = 0;
+        for _ in 0..iterations {
+            let started = Instant::now();
+            self.world.insert_resource(DirtyMaterials(Vec::new()));
+            resource_ns += started.elapsed().as_nanos();
+
+            let started = Instant::now();
+            self.runtime
+                .run_schedule::<Update>(&mut self.world)
+                .expect("diagnostic schedule");
+            schedule_ns += started.elapsed().as_nanos();
+        }
+        (resource_ns, schedule_ns)
     }
 
     pub fn data(&self) -> Data {

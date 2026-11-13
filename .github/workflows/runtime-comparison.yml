@@ -90,6 +90,21 @@ jobs:
             --output "$RUNNER_TEMP/runtime-comparison/raw.csv" \
             --rounds 6 --objects 128 2048
 
+      - name: Collect separately instrumented stage diagnostics
+        run: |
+          set -euo pipefail
+          {
+            echo "Diagnostic timestamps change the measurement; not a performance ranking."
+            for size in 128 2048; do
+              for workload in noop sparse dense fanout reassign; do
+                projects/runtime-comparison/target/release/runtime-comparison \
+                  --diagnostic tde "$workload" "$size" 100
+              done
+              projects/runtime-comparison/target/release/runtime-comparison \
+                --diagnostic runen noop "$size" 100
+            done
+          } > "$RUNNER_TEMP/runtime-comparison/diagnostics.txt"
+
       - name: Preserve raw exploratory benchmark evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

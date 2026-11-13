@@ -44,6 +44,12 @@ Both timed regions include backend mutation, native scheduling, index updates, a
 
 The repository-level `cargo validate` remains a separate required gate. A project-specific GitHub workflow runs this replay on the exact PR head; project validation integration is coordinated with Runen Lab draft PR #8 and must not overwrite that owner's independent work.
 
+## Stage diagnostics (instrumented)
+
+The Release workflow additionally runs optional `--diagnostic` calls. TDE reports aggregate durations for inverse-group snapshots, dirty-object/index maintenance, source and version updates, affected-key collection, and output publication. RunenECS no-op diagnostics separate the application resource replacement from execution of the full native three-system schedule. These are **instrumented**, and the schedule includes query/component work; they are not directly comparable microbenchmarks. Exact code and independent correctness readback are reused.
+
+Reproduce an instrumented case with `target/release/runtime-comparison --diagnostic tde fanout 2048 100`. The raw diagnostics are stored next to the uninstrumented measurements.
+
 ## Evidence and limitations
 
 The fixtures were verified independently in Python; that is not Rust execution evidence. Real Rust correctness requires successful exact-head project tests and replay. The exploratory Release benchmark is implemented but does not yet establish a general comparison. Any future comparison must time equivalent operations on one host, include update propagation and publications, report memory and user-authored coordination, preserve native ECS capabilities, and retain raw measurements. This project must not be used as proof that TDE outperforms Bevy or RunenECS.

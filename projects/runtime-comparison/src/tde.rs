@@ -2,6 +2,25 @@
 use crate::contract::{Data, Dirty, Key, Obj, Packet, packet};
 use crate::generated;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
+
+/// Instrumented costs for the exact same TDE update algorithm.
+/// These timer readings are diagnostics, not unbiased benchmark latencies.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct TdeApplyProfile {
+    pub snapshot_ns: u128,
+    pub dirty_objects_ns: u128,
+    pub sources_ns: u128,
+    pub affected_ns: u128,
+    pub publication_ns: u128,
+}
+
+fn record_stage(clock: &mut Option<Instant>) -> u128 {
+    let start = clock.as_mut().expect("profile clock exists");
+    let elapsed = start.elapsed().as_nanos();
+    *start = Instant::now();
+    elapsed
+}
 
 pub struct Tde {
     objects: BTreeMap<u32, Obj>,
@@ -36,8 +55,31 @@ impl Tde {
     }
 
     pub fn apply(&mut self, before: &Data, after: &Data, dirty: &Dirty) {
+        self.apply_internal::<false>(before, after, dirty);
+    }
+
+    pub fn apply_profiled(
+        &mut self,
+        before: &Data,
+        after: &Data,
+        dirty: &Dirty,
+    ) -> TdeApplyProfile {
+        self.apply_internal::<true>(before, after, dirty)
+    }
+
+    fn apply_internal<const PROFILE: bool>(
+        &mut self,
+        before: &Data,
+        after: &Data,
+        dirty: &Dirty,
+    ) -> TdeApplyProfile {
+        let mut profile = TdeApplyProfile::default();
+        let mut clock = if PROFILE { Some(Instant::now()) } else { None };
         // Snapshot only reverse-index groups impacted by this edit.
         let previous_groups = generated::snapshot_groups(&self.inverse, &dirty.materials);
+        if PROFILE {
+            profile.snapshot_ns = record_stage(&mut clock);
+        }
         let mut affected_objects = BTreeSet::new();
         for &slot in &dirty.objects {
             let prior = before.objects.get(&slot).map(|&obj| {
@@ -74,6 +116,9 @@ impl Tde {
                 }
             }
         }
+        if PROFILE {
+            profile.dirty_objects_ns = record_stage(&mut clock);
+        }
         for &material in &dirty.materials {
             if let Some(&color) = after.materials.get(&material) {
                 self.materials.insert(material, color);
@@ -86,12 +131,18 @@ impl Tde {
                 self.versions.remove(&slot);
             }
         }
+        if PROFILE {
+            profile.sources_ns = record_stage(&mut clock);
+        }
         let affected = generated::affected(
             &previous_groups,
             &self.inverse,
             &affected_objects,
             &dirty.materials,
         );
+        if PROFILE {
+            profile.affected_ns = record_stage(&mut clock);
+        }
         for key in affected {
             match self
                 .objects
@@ -110,6 +161,10 @@ impl Tde {
                 }
             }
         }
+        if PROFILE {
+            profile.publication_ns = record_stage(&mut clock);
+        }
+        profile
     }
 
     pub fn data(&self) -> Data {

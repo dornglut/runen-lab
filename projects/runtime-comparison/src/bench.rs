@@ -290,3 +290,49 @@ mod tests {
         }
     }
 }
+
+pub fn diagnostic(args: &[String]) {
+    assert_eq!(args.len(), 4, "usage: --diagnostic BACKEND WORKLOAD OBJECTS ITERATIONS");
+    let backend = args[0].as_str();
+    let workload = args[1].as_str();
+    let size: u32 = args[2].parse().expect("integer object count");
+    let iterations: usize = args[3].parse().expect("integer iterations");
+    assert!((32..=100_000).contains(&size), "object count out of range");
+    assert!((2..=100_000).contains(&iterations) && iterations.is_multiple_of(2));
+
+    let (before, after, dirty) = states(size, workload);
+    match backend {
+        "tde" => {
+            let mut consumer = Tde::new(&before);
+            let mut totals = [0u128; 5];
+            for index in 0..iterations {
+                let (from, to) = if index % 2 == 0 {
+                    (&before, &after)
+                } else {
+                    (&after, &before)
+                };
+                let times = consumer.apply_profiled(from, to, &dirty);
+                totals[0] += times.snapshot_ns;
+                totals[1] += times.dirty_objects_ns;
+                totals[2] += times.sources_ns;
+                totals[3] += times.affected_ns;
+                totals[4] += times.publication_ns;
+            }
+            assert_eq!(consumer.data(), before);
+            assert_eq!(consumer.packets(), before.packets());
+            println!(
+                "PROFILE,tde,{workload},{size},{iterations},{},{},{},{},{}",
+                totals[0], totals[1], totals[2], totals[3], totals[4]
+            );
+        }
+        "runen" => {
+            assert_eq!(workload, "noop", "RunenECS diagnosis is currently no-op only");
+            let mut consumer = RunenBackend::new(&before);
+            let (resource_ns, schedule_ns) = consumer.profile_noop_schedule(iterations);
+            assert_eq!(consumer.data(), before);
+            assert_eq!(consumer.packets(), before.packets());
+            println!("PROFILE,runen,noop,{size},{iterations},{resource_ns},{schedule_ns}");
+        }
+        _ => panic!("unknown diagnostic backend: {backend}"),
+    }
+}
