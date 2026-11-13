@@ -216,11 +216,7 @@ impl UiApp for TodoUi {
                         .enabled(state.page_index > 0)
                         .on_activate(|| TodoAction::PreviousPage)
                         .into_element(),
-                    text(format!(
-                        "Page {} of {}",
-                        state.page_index + 1,
-                        state.page_count()
-                    ))
+                    text(format!("Page {} of {}", state.page_index + 1, state.page_count()))
                     .key("todo.page.label")
                     .into_element(),
                     button("Next")
