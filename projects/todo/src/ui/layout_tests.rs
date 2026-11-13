@@ -857,5 +857,74 @@ fn native_smoke_click_targets() {
         let y = (rect.y() + rect.height() / 2.0).round() as u32;
         println!("TODO_NATIVE_TARGET {name} {x} {y}");
     }
+    // Prove that the advertised native target also activates the real
+    // task action through RunenUI's ordinary original pointer sequence.
+    use runenui_core::{
+        InputDeviceId, LogicalPoint, PointerButton, PointerButtons, PointerDeviceKind,
+        PointerEvent, PointerId, PointerPhase,
+    };
+    use runenui_runtime::{InputArbitrationRecord, PumpBudget, RuntimeStatus, UiInputFinality};
+    let toggle_bounds = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|authored| authored.as_str() == "task.1.toggle")
+        })
+        .expect("real toggle remains mounted")
+        .bounds();
+    let point = LogicalPoint::new(
+        toggle_bounds.x() + toggle_bounds.width() / 2.0,
+        toggle_bounds.y() + toggle_bounds.height() / 2.0,
+    )
+    .unwrap();
+    let context = publication.input_context().clone();
+    let pointer = PointerId::new(9).unwrap();
+    let device = InputDeviceId::new(11).unwrap();
+    for phase in [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up] {
+        let mut event = PointerEvent::new(
+            pointer,
+            PointerDeviceKind::Mouse,
+            phase,
+            point,
+            context.clone(),
+        )
+        .with_device_id(device);
+        if phase == PointerPhase::Down {
+            event = event
+                .with_buttons(PointerButtons::new([PointerButton::Primary]))
+                .with_changed_button(PointerButton::Primary);
+        } else if phase == PointerPhase::Up {
+            event = event.with_changed_button(PointerButton::Primary);
+        }
+        let submitted = runtime.submit_pointer(event).unwrap();
+        let batch = runtime.pump(PumpBudget::new(128, 128, 128, 128)).unwrap();
+        assert_eq!(batch.final_ownership().status(), RuntimeStatus::Running);
+        assert!(
+            batch
+                .processed_through()
+                .is_some_and(|through| through >= submitted.sequence())
+        );
+        let exact = batch
+            .ordered_records()
+            .iter()
+            .filter_map(|record| match record {
+                InputArbitrationRecord::InputSettled(receipt)
+                    if receipt.sequence() == submitted.sequence() =>
+                {
+                    Some(receipt.finality())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(exact.len(), 1, "native-target test original {phase:?} receipt");
+        assert!(matches!(exact[0], UiInputFinality::Committed(_)));
+    }
+    assert!(
+        runtime.state().service.tasks()[0].completed(),
+        "published toggle center must activate Complete"
+    );
+    assert!(TodoStorage::at(path.clone()).load().unwrap().tasks()[0].completed());
     std::fs::remove_file(path).unwrap();
 }
