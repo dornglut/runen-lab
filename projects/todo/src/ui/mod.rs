@@ -3,7 +3,7 @@ mod host;
 #[cfg(test)]
 mod layout_tests;
 
-use crate::model::{MAX_TASKS, TaskId, TodoCommand};
+use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
     Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, LayoutDimension,
@@ -17,16 +17,24 @@ pub use host::install;
 
 const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 
-// Root, title, input row, editable, Add, and optional empty/error text;
-// each task adds one row with Complete/Reopen, title and Remove.
+// Keep the mounted UI independent of the storage model's 10,000-task capacity.
+// RunenUI does not yet expose a virtualized list; page the application-owned
+// collection instead of reserving unbounded routed focus/output capacity.
+const TASKS_PER_PAGE: usize = 16;
 const BASE_UI_NODES: usize = 6;
 const TASK_UI_NODES: usize = 4;
-const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * MAX_TASKS;
+const PAGE_UI_NODES: usize = 4;
+const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAGE_UI_NODES;
+// The maximum page exposes a text field, Add, two actions per task and two
+// paging actions. Focus transfer can route each event-bearing widget four
+// times; ordinary routing and framework defaults require additional headroom.
+const MAX_INTERACTION_OUTPUTS: usize = 4 * (4 + 2 * TASKS_PER_PAGE) + 4;
 
 pub struct TodoUi;
 
 pub struct TodoUiState {
     service: TodoService,
+    page_index: usize,
     draft: String,
     draft_revision: u64,
     draft_selection: usize,
@@ -41,11 +49,23 @@ impl TodoUiState {
     fn new(service: TodoService) -> Self {
         Self {
             service,
+            page_index: 0,
             draft: String::new(),
             draft_revision: 0,
             draft_selection: 0,
             error: None,
         }
+    }
+
+    fn page_count(&self) -> usize {
+        self.service.tasks().len().div_ceil(TASKS_PER_PAGE).max(1)
+    }
+
+    fn visible_tasks(&self) -> &[Task] {
+        let tasks = self.service.tasks();
+        let start = self.page_index.saturating_mul(TASKS_PER_PAGE).min(tasks.len());
+        let end = start.saturating_add(TASKS_PER_PAGE).min(tasks.len());
+        &tasks[start..end]
     }
 
     fn draft_snapshot(&self) -> TextDocumentSnapshot {
@@ -72,27 +92,33 @@ impl TodoUiState {
 pub enum TodoAction {
     EditDraft(Box<EditIntent>),
     AddTask,
+    PreviousPage,
+    NextPage,
     SetCompleted { id: TaskId, completed: bool },
     RemoveTask(TaskId),
 }
 
 impl UiApp for TodoUi {
     fn initial_producer_budget(state: &Self::State) -> ProducerBudget {
-        // Initial mounting is state-dependent; bound the actual persisted task tree.
-        let nodes = BASE_UI_NODES + TASK_UI_NODES * state.service.tasks().len();
+        // Only the current page mounts; all persisted tasks remain available
+        // through the application-owned page state and unchanged TodoService.
+        let pager = usize::from(state.page_count() > 1) * PAGE_UI_NODES;
+        let nodes = BASE_UI_NODES + TASK_UI_NODES * state.visible_tasks().len() + pager;
         ProducerBudget::new(nodes + 1, 0).with_reconciliation(nodes, 0, nodes)
     }
 
     fn action_producer_budget(_state: &Self::State, _action: &Self::Action) -> ProducerBudget {
-        // Queued actions may change the task count before this action executes.
-        // The model's MAX_TASKS is the closed bound for every reachable tree.
-        ProducerBudget::new(28, 1).with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+        // Every predecessor state still mounts at most one page. Reserve the
+        // bounded lifecycle/reconciliation frontier across page transitions.
+        ProducerBudget::new(3 * MAX_UI_NODES + 16, 1)
+            .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
     }
 
     fn interaction_producer_budget(_state: &Self::State) -> ProducerBudget {
-        // Retain the accepted U9-C text-field/IME service frontier, while
-        // reconciling the Todo-owned maximum number of authored nodes.
-        ProducerBudget::new(28, 13)
+        // Focus may traverse all mounted actionable rows after earlier
+        // application actions. Reserve a fixed upper bound for every page,
+        // including the U9-C native text/IME framework-service frontier.
+        ProducerBudget::new(3 * MAX_INTERACTION_OUTPUTS + 32, MAX_INTERACTION_OUTPUTS)
             .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
             .with_work_starts(WorkStartBudget::new(0, 0, 0, 0, 2))
             .with_work_residency(WorkResidencyBudget::new(0, 0, 0, 0, 0, 2))
@@ -151,7 +177,7 @@ impl UiApp for TodoUi {
         if state.service.tasks().is_empty() {
             content.push(text("No tasks yet.").key("todo.empty").into_element());
         } else {
-            for task in state.service.tasks() {
+            for task in state.visible_tasks() {
                 let id = task.id();
                 let completed = task.completed();
                 let label = if completed {
@@ -180,6 +206,32 @@ impl UiApp for TodoUi {
                     .into_element(),
                 );
             }
+        }
+
+        if state.page_count() > 1 {
+            content.push(
+                row([
+                    button("Previous")
+                        .key("todo.page.previous")
+                        .enabled(state.page_index > 0)
+                        .on_activate(|| TodoAction::PreviousPage)
+                        .into_element(),
+                    text(format!(
+                        "Page {} of {}",
+                        state.page_index + 1,
+                        state.page_count()
+                    ))
+                    .key("todo.page.label")
+                    .into_element(),
+                    button("Next")
+                        .key("todo.page.next")
+                        .enabled(state.page_index + 1 < state.page_count())
+                        .on_activate(|| TodoAction::NextPage)
+                        .into_element(),
+                ])
+                .key("todo.page.row")
+                .into_element(),
+            );
         }
 
         if let Some(error) = &state.error {
@@ -224,10 +276,19 @@ impl UiApp for TodoUi {
                     title: state.draft.clone(),
                 });
                 if created {
+                    state.page_index = (state.service.tasks().len() - 1) / TASKS_PER_PAGE;
                     state.draft.clear();
                     state.draft_selection = 0;
                     state.draft_revision += 1;
                 }
+                UpdateOutput::effects(Effects::none())
+            }
+            TodoAction::PreviousPage => {
+                state.page_index = state.page_index.saturating_sub(1);
+                UpdateOutput::effects(Effects::none())
+            }
+            TodoAction::NextPage => {
+                state.page_index = (state.page_index + 1).min(state.page_count() - 1);
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::SetCompleted { id, completed } => {
@@ -235,7 +296,9 @@ impl UiApp for TodoUi {
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::RemoveTask(id) => {
-                state.execute(TodoCommand::Remove { id });
+                if state.execute(TodoCommand::Remove { id }) {
+                    state.page_index = state.page_index.min(state.page_count() - 1);
+                }
                 UpdateOutput::effects(Effects::none())
             }
         }
@@ -299,6 +362,48 @@ mod tests {
         assert_eq!(state.service.tasks()[0].title(), "Programmatic");
         assert_eq!(storage.load().unwrap().tasks()[0].title(), "Programmatic");
 
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn paged_tasks_preserve_full_storage_and_clamp_after_last_removal() {
+        let path = std::env::temp_dir().join(format!(
+            "runen-lab-todo-pages-{}-{}.json",
+            std::process::id(),
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed),
+        ));
+        let storage = TodoStorage::at(path.clone());
+        let mut service = TodoService::at(storage.clone()).unwrap();
+        for number in 0..=TASKS_PER_PAGE {
+            service
+                .execute(TodoCommand::Add {
+                    title: format!("Task {number}"),
+                })
+                .unwrap();
+        }
+        let mut state = TodoUiState::new(service);
+        assert_eq!(state.page_count(), 2);
+        assert_eq!(state.visible_tasks().len(), TASKS_PER_PAGE);
+        let last = state.service.tasks()[TASKS_PER_PAGE].id();
+
+        let _ = TodoUi::update(&mut state, TodoAction::NextPage);
+        assert_eq!(state.page_index, 1);
+        assert_eq!(state.visible_tasks().len(), 1);
+        assert_eq!(state.visible_tasks()[0].id(), last);
+
+        let _ = TodoUi::update(
+            &mut state,
+            TodoAction::SetCompleted {
+                id: last,
+                completed: true,
+            },
+        );
+        assert!(storage.load().unwrap().tasks()[TASKS_PER_PAGE].completed());
+        let _ = TodoUi::update(&mut state, TodoAction::RemoveTask(last));
+        assert_eq!(state.page_index, 0);
+        assert_eq!(state.page_count(), 1);
+        assert_eq!(state.visible_tasks().len(), TASKS_PER_PAGE);
+        assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE);
         std::fs::remove_file(path).unwrap();
     }
 
