@@ -282,7 +282,10 @@ mod tests {
                 assert_eq!(accepted.data, after);
                 assert_eq!(accepted.dirty.objects, dirty.objects);
                 assert_eq!(accepted.dirty.materials, dirty.materials);
-                assert_eq!(propose(&after, &reverse).expect("reverse accepted").data, before);
+                assert_eq!(
+                    propose(&after, &reverse).expect("reverse accepted").data,
+                    before
+                );
             }
         }
     }
