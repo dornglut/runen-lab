@@ -115,10 +115,7 @@ fn dense_movement_uses_explicit_feedback_without_instantaneous_cycle() -> Result
     game.transact(|tx| tx.put(target, Velocity(99)))?;
     // Only the target's NextPosition computation is invalidated.
     assert_eq!(game.last_evaluations(), 1);
-    assert_eq!(
-        game.get::<NextPosition>(target),
-        Some(NextPosition(243))
-    );
+    assert_eq!(game.get::<NextPosition>(target), Some(NextPosition(243)));
     Ok(())
 }
 
