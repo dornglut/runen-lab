@@ -276,10 +276,7 @@ impl RuleCx<'_, '_> {
 
     /// Read a current value (tracking it) only when it differs from the
     /// previous committed value. Removal returns None, not a value.
-    pub fn changed<T: Clone + Eq + 'static>(
-        &mut self,
-        key: Key,
-    ) -> Result<Option<T>, Error> {
+    pub fn changed<T: Clone + Eq + 'static>(&mut self, key: Key) -> Result<Option<T>, Error> {
         let current = self.get::<T>(key)?;
         Ok(if current != self.previous::<T>(key) {
             current
@@ -367,19 +364,24 @@ impl Engine {
     /// Added, modified and removed output values from the last successful
     /// transaction, ordered by generational key. Only one delta per key.
     pub fn changes<T: Clone + Eq + 'static>(&self) -> Vec<OutputChange<T>> {
-        let mut result: Vec<_> = self.output_changes.iter()
+        let mut result: Vec<_> = self
+            .output_changes
+            .iter()
             .filter(|(fact, _)| fact.ty == TypeId::of::<T>())
             .filter_map(|(fact, kind)| match kind {
-                ChangeKind::Added => self.get::<T>(fact.key)
+                ChangeKind::Added => self
+                    .get::<T>(fact.key)
                     .map(|value| OutputChange::Added(fact.key, value)),
-                ChangeKind::Updated => self.get::<T>(fact.key)
+                ChangeKind::Updated => self
+                    .get::<T>(fact.key)
                     .map(|value| OutputChange::Updated(fact.key, value)),
                 ChangeKind::Removed => Some(OutputChange::Removed(fact.key)),
             })
             .collect();
         result.sort_by_key(|change| match change {
-            OutputChange::Added(key, _) | OutputChange::Updated(key, _)
-                | OutputChange::Removed(key) => *key,
+            OutputChange::Added(key, _)
+            | OutputChange::Updated(key, _)
+            | OutputChange::Removed(key) => *key,
         });
         result
     }

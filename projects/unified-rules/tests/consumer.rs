@@ -406,13 +406,18 @@ fn temporal_game() -> Engine {
             return Ok(Some(before));
         };
         if ctx.previous::<Position>(entity).is_none()
-            || ctx.previous::<Step>(CLOCK).is_some_and(|prior| prior.epoch == step.epoch)
+            || ctx
+                .previous::<Step>(CLOCK)
+                .is_some_and(|prior| prior.epoch == step.epoch)
         {
             return Ok(Some(before));
         }
         let delta = velocity.checked_mul(step.dt).ok_or(Error::Overflow)?;
-        Ok(Some(Position(before.0.checked_add(delta).ok_or(Error::Overflow)?)))
-    }).unwrap();
+        Ok(Some(Position(
+            before.0.checked_add(delta).ok_or(Error::Overflow)?,
+        )))
+    })
+    .unwrap();
     game.rule::<ContactOccurrence>(|ctx, entity| {
         let Some(Contact(true)) = ctx.get::<Contact>(entity)? else {
             return Ok(None);
@@ -426,7 +431,8 @@ fn temporal_game() -> Engine {
         } else {
             Ok(previous)
         }
-    }).unwrap();
+    })
+    .unwrap();
     game
 }
 
@@ -451,9 +457,10 @@ fn temporal_rule_moves_without_promote_and_emits_repeated_typed_occurrences() ->
 
     world.transact(|tx| tx.put(CLOCK, Step { epoch: 1, dt: 2 }))?;
     assert_eq!(world.get::<Position>(player), Some(Position(16)));
-    assert_eq!(world.changes::<ContactOccurrence>(), vec![
-        OutputChange::Added(enemy, ContactOccurrence(1))
-    ]);
+    assert_eq!(
+        world.changes::<ContactOccurrence>(),
+        vec![OutputChange::Added(enemy, ContactOccurrence(1))]
+    );
 
     world.transact(|_| Ok(()))?;
     assert!(world.changes::<ContactOccurrence>().is_empty());
@@ -464,32 +471,42 @@ fn temporal_rule_moves_without_promote_and_emits_repeated_typed_occurrences() ->
 
     world.transact(|tx| tx.put(CLOCK, Step { epoch: 2, dt: 2 }))?;
     assert_eq!(world.get::<Position>(player), Some(Position(24)));
-    assert_eq!(world.changes::<ContactOccurrence>(), vec![
-        OutputChange::Updated(enemy, ContactOccurrence(2))
-    ]);
+    assert_eq!(
+        world.changes::<ContactOccurrence>(),
+        vec![OutputChange::Updated(enemy, ContactOccurrence(2))]
+    );
 
     world.transact(|tx| tx.put(enemy, Contact(false)))?;
-    assert_eq!(world.changes::<ContactOccurrence>(), vec![
-        OutputChange::Removed(enemy)
-    ]);
+    assert_eq!(
+        world.changes::<ContactOccurrence>(),
+        vec![OutputChange::Removed(enemy)]
+    );
 
     // A failed timestep must not advance state or expose event changes.
     assert_eq!(
-        world.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: i64::MAX })),
+        world.transact(|tx| tx.put(
+            CLOCK,
+            Step {
+                epoch: 3,
+                dt: i64::MAX
+            }
+        )),
         Err(Error::Overflow)
     );
     assert_eq!(world.get::<Position>(player), Some(Position(24)));
     assert_eq!(world.get::<Step>(CLOCK), Some(Step { epoch: 2, dt: 2 }));
-    assert_eq!(world.changes::<ContactOccurrence>(), vec![
-        OutputChange::Removed(enemy)
-    ]);
+    assert_eq!(
+        world.changes::<ContactOccurrence>(),
+        vec![OutputChange::Removed(enemy)]
+    );
 
     world.transact(|tx| tx.put(CLOCK, Step { epoch: 3, dt: 2 }))?;
     assert_eq!(world.get::<Position>(player), Some(Position(32)));
     world.transact(|tx| tx.put(enemy, Contact(true)))?;
-    assert_eq!(world.changes::<ContactOccurrence>(), vec![
-        OutputChange::Added(enemy, ContactOccurrence(3))
-    ]);
+    assert_eq!(
+        world.changes::<ContactOccurrence>(),
+        vec![OutputChange::Added(enemy, ContactOccurrence(3))]
+    );
     Ok(())
 }
 
@@ -513,8 +530,11 @@ fn temporal_rules_follow_independent_fixed_step_oracle() -> Result<(), Error> {
         world.transact(|tx| tx.put(CLOCK, Step { epoch, dt }))?;
         for (index, value) in expected.iter_mut().enumerate() {
             *value += (index as i64 % 5) * dt;
-            assert_eq!(world.get::<Position>(Key::new(index as u32 + 1, 1)),
-                Some(Position(*value)), "step {epoch}, key {index}");
+            assert_eq!(
+                world.get::<Position>(Key::new(index as u32 + 1, 1)),
+                Some(Position(*value)),
+                "step {epoch}, key {index}"
+            );
         }
     }
     Ok(())
