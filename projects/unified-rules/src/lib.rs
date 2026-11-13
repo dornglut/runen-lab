@@ -665,6 +665,9 @@ pub struct Engine {
     output_changes: HashMap<Fact, ChangeKind>,
     last_evaluations: usize,
     initialized_singletons: HashSet<usize>,
+    // Registration freezes at the first successful commit, including a no-op.
+    // An empty world is not proof that no earlier clock input was admitted.
+    committed_once: bool,
 }
 
 impl Engine {
@@ -684,7 +687,7 @@ impl Engine {
         &mut self,
         f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>) -> Result<Option<T>, Error> + 'static,
     ) -> Result<(), Error> {
-        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
+        if self.committed_once {
             return Err(Error::LateRegistration);
         }
         let ty = TypeId::of::<T>();
@@ -743,7 +746,7 @@ impl Engine {
         key: Key,
         epoch: impl Fn(&T) -> u64 + 'static,
     ) -> Result<(), Error> {
-        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
+        if self.committed_once {
             return Err(Error::LateRegistration);
         }
         let fact = Fact::of::<T>(key);
@@ -764,7 +767,7 @@ impl Engine {
         &mut self,
         epoch: impl Fn(&T) -> u64 + 'static,
     ) -> Result<(), Error> {
-        if !self.world.live.is_empty() || !self.initialized_singletons.is_empty() {
+        if self.committed_once {
             return Err(Error::LateRegistration);
         }
         let fact = Fact::singleton::<T>();
@@ -798,7 +801,7 @@ impl Engine {
     where
         T: Clone + Eq + 'static,
     {
-        if !self.world.live.is_empty() {
+        if self.committed_once {
             return Err(Error::LateRegistration);
         }
         let ty = TypeId::of::<T>();
@@ -1082,6 +1085,7 @@ impl Engine {
         self.output_changes = output_changes;
         self.events = events;
         self.last_evaluations = evaluations;
+        self.committed_once = true;
         for (rule, spec) in self.rules.iter().enumerate() {
             if spec.singleton {
                 self.initialized_singletons.insert(rule);

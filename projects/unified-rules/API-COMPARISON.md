@@ -139,6 +139,8 @@ from both keyed and keyless producers in one deterministic commit snapshot.
 The independently compiled consumer proves clock admission and invalid-step
 rejection for both scopes, isolation of two clocks with the same Rust type,
 keyless clock-driven movement and events, duplicate same-event emissions,
+registration freeze after the first successful commit (including keyless-only
+and empty commits),
 failed transaction preserving the prior event snapshot, successful no-op
 clearing it, unregistered clock rejection, and a 64-epoch/24-object independent
 arithmetic oracle.

@@ -23,7 +23,7 @@ The application defines only types and ordinary rule bodies; no domain-specific 
 
 ## Semantic contract and limitations
 
-- Per-key types are `Clone + Eq + 'static`. A rule's output type has one producer. Rules must register **before spawning entities**. Values are cloned on read; borrowed components, non-`'static` closures, non-`Eq` types and concurrent execution are not proven.
+- Per-key types are `Clone + Eq + 'static`. A rule's output type has one producer. Rules and clocks must register **before the first successful transaction**, even if it has no live entities; failed transactions do not freeze registration. Values are cloned on read; borrowed components, non-`'static` closures, non-`Eq` types and concurrent execution are not proven.
 - Rules can read other derived types via `ctx.get::<T>(key)`; dynamic read sets include absent lookups and `exists` checks. Recursive derived reads use per-key cycle detection and fail the whole staged transaction.
 - A trial `ctx.all::<T>()` reads a **typed collection snapshot**, ordered by generational key. The dependency graph now distinguishes a typed collection from an individual typed fact (no fake sentinel key). Source writes/removals and derived-task invalidations propagate collection invalidation, including membership changes on key creation/deletion. It scans and clones all live-key values, and a change to **one member** re-evaluates **every aggregate** observing that type; neither a selective index nor a scalable query plan is proven.
 - An in-memory single-writer transaction stages source edits, invalidates affected cached tasks **transitively** through previously observed dependencies, resolves derived dependencies on demand, and publishes coherent values on success. Failed edits or rule evaluation leave the previous world visible.
@@ -150,6 +150,11 @@ consumers**; it is not the recommended future event contract.
 A successful no-op transaction clears the previous snapshot; a rejected
 transaction preserves the previous committed snapshot. This is volatile
 in-memory behavior, **not** durable delivery or externally executed effects.
+
+Clock/rule registration freezes on the first successful commit, including
+empty commits and keyless-only state. This prevents accepting an existing
+unvalidated clock state by registering its admission policy too late; failed
+transactions do not freeze a new engine.
 
 The independently compiled `tests/scope_time_event_candidate.rs` exercises
 keyed movement driven by a keyless clock, keyed and keyless events of the
