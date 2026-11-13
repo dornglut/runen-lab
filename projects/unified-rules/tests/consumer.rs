@@ -117,7 +117,7 @@ fn dense_movement_uses_explicit_feedback_without_instantaneous_cycle() -> Result
     assert_eq!(game.last_evaluations(), 1);
     assert_eq!(
         game.get::<NextPosition>(target),
-        Some(NextPosition(43 + 2 * (43 % 7) + 198))
+        Some(NextPosition(243))
     );
     Ok(())
 }
