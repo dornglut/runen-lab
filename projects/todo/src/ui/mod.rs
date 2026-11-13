@@ -22,7 +22,8 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 // Keep the mounted UI independent of the storage model's 10,000-task capacity.
 // RunenUI does not yet expose a virtualized list; page the application-owned
 // collection instead of reserving unbounded routed focus/output capacity.
-const TASKS_PER_PAGE: usize = 6;
+// Five rows leave room for section gaps and paging at the default 800x600 size.
+const TASKS_PER_PAGE: usize = 5;
 // Header, composer, section labels, root, empty/error state.
 const BASE_UI_NODES: usize = 22;
 const TASK_UI_NODES: usize = 4;
@@ -517,7 +518,7 @@ impl UiApp for TodoUi {
                     .with_container(LayoutContainer::Flex(
                         FlexContainerStyle::default().with_direction(FlexDirection::Column),
                     ))
-                    .with_gap(LogicalLength::from(theme::SPACE_5))
+                    .with_gap(LogicalLength::from(theme::SPACE_4))
                     .with_width(LayoutDimension::Fill)
                     .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
             )
