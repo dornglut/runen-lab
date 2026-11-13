@@ -633,14 +633,37 @@ impl UiApp for TodoUi {
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::SetCompleted { id, completed } => {
-                if state.execute(TodoCommand::SetCompleted { id, completed }) {
+                let persisted = state.execute(TodoCommand::SetCompleted { id, completed });
+                if persisted {
                     state.page_index = state.page_index.min(state.page_count() - 1);
+                }
+                if diagnostics_enabled() {
+                    eprintln!(
+                        "todo.action: completed-result id={} completed={} persisted={} task_count={} page_index={} error_present={}",
+                        id.get(),
+                        completed,
+                        persisted,
+                        state.service.tasks().len(),
+                        state.page_index,
+                        state.error.is_some()
+                    );
                 }
                 UpdateOutput::effects(Effects::none())
             }
             TodoAction::RemoveTask(id) => {
-                if state.execute(TodoCommand::Remove { id }) {
+                let persisted = state.execute(TodoCommand::Remove { id });
+                if persisted {
                     state.page_index = state.page_index.min(state.page_count() - 1);
+                }
+                if diagnostics_enabled() {
+                    eprintln!(
+                        "todo.action: remove-result id={} persisted={} task_count={} page_index={} error_present={}",
+                        id.get(),
+                        persisted,
+                        state.service.tasks().len(),
+                        state.page_index,
+                        state.error.is_some()
+                    );
                 }
                 UpdateOutput::effects(Effects::none())
             }
