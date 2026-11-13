@@ -189,6 +189,51 @@ is retained, but authoring commands remains an explicit state/effect
 distinction. This distinction is necessary, not automatically a hybrid
 scheduler API.
 
+## F — crash-window and effect-lifecycle ownership comparison
+
+This is an independently compiled **fault model and counterexample suite**, not
+a real transactional database, disk persistence, networking or GPU execution
+test. The test's `ModeledAtomicStore` assumes one atomic recoverable
+checkpoint for business state and effect intents; it does **not** implement
+`fsync`, log replay, multi-process concurrency or a source-of-truth adapter.
+
+| Candidate ownership boundary | Behavior at commit→handoff crash | Behavior at dispatch→ack crash | Tradeoff |
+| --- | --- | --- | --- |
+| Engine-owned durable outbox | Can retain request **only** if engine state and outbox are atomically durable | Can duplicate delivery | Forces persistence-specific semantics into a potentially volatile game execution core |
+| External executor-owned queue, naive postcommit enqueue | **LOST COMMAND**: business state committed but nothing enqueued | Can duplicate delivery | Unsafe without atomic shared commit, durable source log/CDC or recoverable reconciliation |
+| State-owner's atomic state+intent adapter plus external executor | Pending request recoverable in the modeled transaction | Retry can duplicate; idempotent sink can suppress by stable key | Separates computation contract from persistence and transport, but requires explicit adapter/ack authority |
+| Volatile GPU/renderer request lifetime | In-process progress only; restart recovery may intentionally mean rebuilding resources | Not a database delivery guarantee; explicit terminal status, generations and cancellation needed | Different durability policy behind a coherent typed request/result vocabulary |
+
+The suite uses two different kinds of evidence:
+1. **Real Lab engine**: recreating `Engine` loses pending requests and reuses
+   numeric `EffectId` values. Never treat these IDs as persistent identity.
+2. **Modeled fault boundaries**: staged failure before commit leaves neither
+   state nor request; modeled atomic commit survives simulated restart; a
+   postcommit external enqueue gap demonstrably loses work; a crash after
+   execution but before acknowledgment can duplicate; sink-side stable-key
+   deduplication suppresses the *second execution* in the model. A separate
+   business-occurrence key deduplicates re-evaluation/ack retries and rejects
+   conflicting payload reuse while admitting a genuinely new occurrence.
+
+**Provisional architecture recommendation (NOT acceptance):** Keep the
+**deterministic calculation/request staging contract** in the computation
+domain, but let the **authoritative state storage adapter** own any required
+atomic persistence of state and pending intents. A separately owned effect
+executor handles submission and explicit completion/failure/acknowledgment.
+Do not force database durability on volatile GPU or frame operations; their
+owners require bounded progress, cancellation/obsolescence and terminal
+observation instead. A "single developer-facing rule model" can expose typed
+requests and result facts without treating externally executing them as
+transactional rules.
+
+**Still blocked:** Real storage implementation, recovery/fsync, crash
+injection with actual persistence, concurrent claim/lease, ordered
+multi-producer delivery, durable ID scheme, I/O side-effect purity and
+type-safe completion feedback are unqualified. Both generic API frontends and
+full Bevy/RunenECS equivalence/performance gates remain unproven. The F suite
+does not establish at-least-once delivery in a real system, and never claims
+external exactly-once effects. Retain RULE-03, RULE-06, RULE-07 on **HOLD**.
+
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in

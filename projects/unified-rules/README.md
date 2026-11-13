@@ -198,6 +198,34 @@ multiple keyed/global effect producers, typed filtering, distinct IDs,
 retention until explicit acknowledgment, no-op behavior, deletion, rollback
 and the deliberate direct-side-effect negative oracle.
 
+## External-effect ownership and crash windows — comparison, not storage code
+
+`tests/effect_delivery_boundary.rs` compares two coordination strategies:
+committing business state then independently enqueuing an external command,
+versus a **simulated atomic checkpoint** of business state and command
+intents followed by an external executor. The first has a crash window that
+loses work. The second retains pending work after a simulated crash before
+dispatch, but a crash after dispatch before acknowledgment can still replay
+the same command. Idempotent sink-side keys suppress duplicate physical work
+*only if the external sink actually retains them*. A stable business
+occurrence key is distinct from the current process-local `EffectId`.
+
+The test also uses the **real prototype** to demonstrate that destroying
+and recreating an `Engine` loses all pending requests, and the next
+instance may reuse an old numeric `EffectId`. The modeled "durable" store
+is only a pure-Rust semantic state machine—there is **no disk, serialized
+snapshot, crash-safe commit, replayable log or actual external transport**.
+This evidence does not authorize an engine-owned database, a real
+persistence interface, or an accepted public API.
+
+**Research direction:** Keep rule request creation and invalidation semantics
+independent from storage choice. Where data must survive process restarts, a
+state-owning adapter must atomically commit both authoritative state and
+effect intents; a separate executor owns I/O, retries and completion reports.
+Where durable processing is inappropriate (e.g. GPU/frame completion),
+effect ownership can instead use lifecycle/epoch/cancellation semantics.
+Neither policy establishes universal purity or exactly-once delivery.
+
 ## Reproduce
 
 ```sh
