@@ -295,7 +295,10 @@ impl Transaction<'_> {
         &mut self,
         value: Option<T>,
     ) -> Result<(), Error> {
-        if self.outputs.contains_key(&(TypeId::of::<T>(), ProducerScope::One)) {
+        if self
+            .outputs
+            .contains_key(&(TypeId::of::<T>(), ProducerScope::One))
+        {
             return Err(Error::DerivedIsReadOnly);
         }
         if self.world.set_singleton(value) {
@@ -317,7 +320,10 @@ impl Transaction<'_> {
         if !self.world.contains(key) {
             return Err(Error::MissingEntity);
         }
-        if self.outputs.contains_key(&(TypeId::of::<T>(), ProducerScope::Each)) {
+        if self
+            .outputs
+            .contains_key(&(TypeId::of::<T>(), ProducerScope::Each))
+        {
             return Err(Error::DerivedIsReadOnly);
         }
         if self.world.set::<T>(key, value) {
@@ -619,7 +625,8 @@ impl Engine {
             cx.evaluator.world.set_singleton::<T>(value);
             Ok(())
         };
-        self.by_type.insert((ty, ProducerScope::One), self.rules.len());
+        self.by_type
+            .insert((ty, ProducerScope::One), self.rules.len());
         self.rules.push(Rule {
             output: ty,
             singleton: true,
@@ -713,7 +720,8 @@ impl Engine {
             ctx.evaluator.world.set::<T>(key, value);
             Ok(())
         };
-        self.by_type.insert((ty, ProducerScope::Each), self.rules.len());
+        self.by_type
+            .insert((ty, ProducerScope::Each), self.rules.len());
         self.rules.push(Rule {
             output: ty,
             singleton: false,

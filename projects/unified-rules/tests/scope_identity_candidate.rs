@@ -181,13 +181,10 @@ fn global_occurrences_cannot_claim_a_fictitious_entity_origin() -> Result<(), Er
     Ok(())
 }
 
-
 #[test]
 fn same_rust_type_has_independent_keyed_and_global_output_producers() -> Result<(), Error> {
     let mut app = Engine::new();
-    app.compute::<Each<Temp>>(|cx, key| {
-        Ok(cx.get::<Line>(key)?.map(|line| Temp(line.qty)))
-    })?;
+    app.compute::<Each<Temp>>(|cx, key| Ok(cx.get::<Line>(key)?.map(|line| Temp(line.qty))))?;
     app.compute::<One<Temp>>(|cx, ()| {
         let mut sum = 0_i64;
         for (_, Temp(qty)) in cx.all::<Temp>()? {
