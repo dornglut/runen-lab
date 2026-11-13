@@ -624,10 +624,25 @@ fn persisted_full_page_mounts_bounded_ui_and_pagination_without_truncating_stora
         ))
         .unwrap();
     assert!(publication.frame().nodes().len() <= MAX_UI_NODES);
-    assert!(publication.frame().nodes().iter().any(|node| {
-        node.authored_id()
-            .is_some_and(|id| id.as_str() == "todo.page.next")
-    }));
+    let next = publication
+        .frame()
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.authored_id()
+                .is_some_and(|id| id.as_str() == "todo.page.next")
+        })
+        .expect("page navigation remains mounted and addressable");
+    let bounds = next.bounds();
+    assert!(
+        bounds.width() > 0.0
+            && bounds.height() > 0.0
+            && bounds.x() >= 0.0
+            && bounds.y() >= 0.0
+            && bounds.x() + bounds.width() <= 800.0
+            && bounds.y() + bounds.height() <= 600.0,
+        "Next control must be visible inside the default Todo window: {bounds:?}"
+    );
     assert_eq!(storage.load().unwrap().tasks().len(), TASKS_PER_PAGE + 1);
     std::fs::remove_file(path).unwrap();
 }

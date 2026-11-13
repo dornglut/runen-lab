@@ -218,6 +218,7 @@ impl UiApp for TodoUi {
             content.push(
                 row([
                     button("Previous")
+                        .id("todo.page.previous")
                         .key("todo.page.previous")
                         .enabled(state.page_index > 0)
                         .on_activate(|| TodoAction::PreviousPage)
@@ -227,9 +228,11 @@ impl UiApp for TodoUi {
                         state.page_index + 1,
                         state.page_count()
                     ))
+                    .id("todo.page.label")
                     .key("todo.page.label")
                     .into_element(),
                     button("Next")
+                        .id("todo.page.next")
                         .key("todo.page.next")
                         .enabled(state.page_index + 1 < state.page_count())
                         .on_activate(|| TodoAction::NextPage)
