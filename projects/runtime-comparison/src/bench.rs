@@ -178,7 +178,10 @@ pub fn run(args: &[String]) {
         matches!(mode, "propagation" | "transaction"),
         "unknown benchmark mode"
     );
-    assert!((32..=1_000_000).contains(&size), "object count out of range");
+    assert!(
+        (32..=1_000_000).contains(&size),
+        "object count out of range"
+    );
     assert!(
         (2..=100_000).contains(&iterations) && iterations.is_multiple_of(2),
         "iteration count must be even and bounded"
@@ -279,7 +282,10 @@ pub fn diagnostic(args: &[String]) {
     let workload = args[1].as_str();
     let size: u32 = args[2].parse().expect("integer object count");
     let iterations: usize = args[3].parse().expect("integer iterations");
-    assert!((32..=1_000_000).contains(&size), "object count out of range");
+    assert!(
+        (32..=1_000_000).contains(&size),
+        "object count out of range"
+    );
     assert!((2..=100_000).contains(&iterations) && iterations.is_multiple_of(2));
 
     let (before, after, dirty) = states(size, workload);

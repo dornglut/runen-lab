@@ -1,8 +1,8 @@
 //! Three-way deterministic Rust semantic replay using independent reference fixtures.
 //! Not a performance comparison; see README.md for limitations.
 mod bench;
-mod candidates;
 mod bevy_backend;
+mod candidates;
 mod contract;
 mod generated;
 mod runen_backend;

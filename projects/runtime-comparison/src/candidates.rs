@@ -130,7 +130,10 @@ impl CompactTde {
         }
 
         for &slot in &dirty.objects {
-            match (self.slots.get(&slot).copied(), after.objects.get(&slot).copied()) {
+            match (
+                self.slots.get(&slot).copied(),
+                after.objects.get(&slot).copied(),
+            ) {
                 (Some(_), Some(object)) => self.replace(slot, object, !bulk),
                 (None, Some(object)) => self.insert(slot, object),
                 (Some(_), None) => self.delete(slot),
@@ -167,7 +170,11 @@ impl CompactTde {
         Data {
             versions: self.versions.clone(),
             materials: self.materials.clone(),
-            objects: self.entries.iter().map(|entry| (entry.slot, entry.object)).collect(),
+            objects: self
+                .entries
+                .iter()
+                .map(|entry| (entry.slot, entry.object))
+                .collect(),
         }
     }
 
