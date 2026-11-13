@@ -63,7 +63,10 @@ impl TodoUiState {
 
     fn visible_tasks(&self) -> &[Task] {
         let tasks = self.service.tasks();
-        let start = self.page_index.saturating_mul(TASKS_PER_PAGE).min(tasks.len());
+        let start = self
+            .page_index
+            .saturating_mul(TASKS_PER_PAGE)
+            .min(tasks.len());
         let end = start.saturating_add(TASKS_PER_PAGE).min(tasks.len());
         &tasks[start..end]
     }
@@ -110,8 +113,11 @@ impl UiApp for TodoUi {
     fn action_producer_budget(_state: &Self::State, _action: &Self::Action) -> ProducerBudget {
         // Every predecessor state still mounts at most one page. Reserve the
         // bounded lifecycle/reconciliation frontier across page transitions.
-        ProducerBudget::new(3 * MAX_UI_NODES + 16, 1)
-            .with_reconciliation(MAX_UI_NODES, MAX_UI_NODES, MAX_UI_NODES)
+        ProducerBudget::new(3 * MAX_UI_NODES + 16, 1).with_reconciliation(
+            MAX_UI_NODES,
+            MAX_UI_NODES,
+            MAX_UI_NODES,
+        )
     }
 
     fn interaction_producer_budget(_state: &Self::State) -> ProducerBudget {
@@ -216,7 +222,11 @@ impl UiApp for TodoUi {
                         .enabled(state.page_index > 0)
                         .on_activate(|| TodoAction::PreviousPage)
                         .into_element(),
-                    text(format!("Page {} of {}", state.page_index + 1, state.page_count()))
+                    text(format!(
+                        "Page {} of {}",
+                        state.page_index + 1,
+                        state.page_count()
+                    ))
                     .key("todo.page.label")
                     .into_element(),
                     button("Next")
