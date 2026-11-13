@@ -542,7 +542,10 @@ fn obsolete_revision_and_reused_entity_key_cannot_receive_old_completion() -> Re
 #[test]
 fn unrelated_change_does_not_resubmit_unchanged_intent_or_cancel() -> Result<(), Error> {
     let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
     create(&mut engine, A, 1)?;
+    let start = pending(&engine, ticket(A, 1), CommandKind::Start);
+    assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
     engine.transact(|tx| tx.put(A, Noise(1)))?;
     assert_eq!(engine.pending_effects::<WorkCommand>().len(), 1);
