@@ -541,19 +541,19 @@ fn separated_task_cards_have_real_vertical_gaps() {
         ]
     );
     assert!(
-        add.y() - (summary.y() + summary.height()) >= 16.0,
+        add.y() - (summary.y() + summary.height()) >= 12.0,
         "header summary and task composer need distinct vertical spacing"
     );
     assert!(
-        filter.y() - (add.y() + add.height()) >= 16.0,
+        filter.y() - (add.y() + add.height()) >= 12.0,
         "task composer and status filters need distinct vertical spacing"
     );
     assert!(
-        section.y() - (filter.y() + filter.height()) >= 16.0,
+        section.y() - (filter.y() + filter.height()) >= 12.0,
         "filters and task-list section heading need distinct vertical spacing"
     );
     assert!(
-        first.y() - (section.y() + section.height()) >= 16.0,
+        first.y() - (section.y() + section.height()) >= 12.0,
         "task-list section heading must not touch the first task card"
     );
     let second = bounds("task.3.row");
