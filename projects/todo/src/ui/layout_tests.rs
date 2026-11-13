@@ -435,7 +435,7 @@ fn actual_todo_text_focus_edit_and_add_preserve_m13_and_persistence() {
         .snapshot()
         .nodes()
         .iter()
-        .find(|node| node.placeholder() == Some("New task"))
+        .find(|node| node.placeholder() == Some("What needs doing?"))
         .expect("semantic editable survives committed text");
     assert_eq!(
         semantic_field
