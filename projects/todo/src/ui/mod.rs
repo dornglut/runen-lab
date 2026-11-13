@@ -518,7 +518,7 @@ impl UiApp for TodoUi {
                     .with_container(LayoutContainer::Flex(
                         FlexContainerStyle::default().with_direction(FlexDirection::Column),
                     ))
-                    .with_gap(LogicalLength::from(theme::SPACE_4))
+                    .with_gap(LogicalLength::from(theme::SPACE_3))
                     .with_width(LayoutDimension::Fill)
                     .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
             )
