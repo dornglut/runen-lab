@@ -155,9 +155,12 @@ fn validate() -> Result<(), String> {
             "warnings",
         ],
     )?;
+    // Windows installs npm as npm.cmd; Command::new("npm") does not
+    // resolve that command script without explicitly naming its extension.
+    let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     run(
         &root,
-        "npm",
+        npm,
         &["run", "check", "--prefix", "projects/pcg-inspector"],
     )?;
     // The independent Todo project is not in the root Cargo workspace.

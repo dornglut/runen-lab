@@ -103,7 +103,7 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
             .snapshot()
             .nodes()
             .iter()
-            .find(|node| node.placeholder() == Some("New task"))
+            .find(|node| node.placeholder() == Some("What needs doing?"))
             .expect("placeholder remains in the field semantics");
         assert_eq!(
             semantic_field
@@ -122,6 +122,12 @@ fn empty_task_field_publishes_visible_clipped_placeholder() {
             .unwrap();
         assert!(field.bounds().x() + field.bounds().width() <= add.bounds().x());
         assert!(add.bounds().x() + add.bounds().width() <= surface_width);
+        assert!(add.bounds().y() + add.bounds().height() <= 600.0);
+        let heading = publication.frame().nodes().iter().find(|node| {
+            node.authored_id().is_some_and(|id| id.as_str() == "todo.heading")
+        }).expect("designed heading is published");
+        assert!(heading.bounds().width() > 0.0 && heading.bounds().height() > 0.0);
+        assert!(heading.bounds().x() >= 0.0 && heading.bounds().y() >= 0.0);
     }
 }
 
@@ -624,6 +630,17 @@ fn persisted_full_page_mounts_bounded_ui_and_pagination_without_truncating_stora
         ))
         .unwrap();
     assert!(publication.frame().nodes().len() <= MAX_UI_NODES);
+    for task in storage.load().unwrap().tasks().iter().take(TASKS_PER_PAGE) {
+        let row_id = format!("task.{}.row", task.id().get());
+        let task_row = publication.frame().nodes().iter().find(|node| {
+            node.authored_id().is_some_and(|id| id.as_str() == row_id)
+        }).expect("styled task row must remain published");
+        let rect = task_row.bounds();
+        assert!(rect.width() > 0.0 && rect.height() > 0.0);
+        assert!(rect.x() >= 0.0 && rect.y() >= 0.0);
+        assert!(rect.x() + rect.width() <= 800.0 && rect.y() + rect.height() <= 600.0,
+            "task row outside default surface: {row_id} {rect:?}");
+    }
     let next = publication
         .frame()
         .nodes()
@@ -755,7 +772,7 @@ fn full_page_next_pointer_activates_real_pagination_without_changing_storage() {
 
     assert_eq!(runtime.state().page_index, 1);
     assert_eq!(runtime.state().visible_tasks().len(), 1);
-    assert_eq!(runtime.state().visible_tasks()[0].title(), "Task 16");
+    assert_eq!(runtime.state().visible_tasks()[0].title(), format!("Task {TASKS_PER_PAGE}"));
     let next_page = runtime.publish_surface(&context).unwrap();
     assert!(next_page.frame().nodes().iter().any(|node| {
         node.authored_id()

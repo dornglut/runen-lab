@@ -6,11 +6,12 @@ mod layout_tests;
 use crate::model::{Task, TaskId, TodoCommand};
 use crate::service::TodoService;
 use runenui_core::{
-    Color, EditIntent, EditResolution, Effects, Element, IntoUpdateOutput, LayoutDimension,
-    LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, SemanticEditableMode, TextAffinity,
-    TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition, TextSelection, UiApp,
-    UpdateOutput, View, WorkResidencyBudget, WorkStartBudget, button, column, row, text,
-    text_field,
+    Color, EdgeInsets, EditIntent, EditResolution, Effects, Element, FlexItemStyle, FontFamily,
+    FontWeight, GenericFontFamily, IntoUpdateOutput, LayoutBound, LayoutDimension, LayoutFactor,
+    LayoutStyle, LogicalLength, NoHostProtocol, ProducerBudget, Radius, SemanticEditableMode,
+    TextAffinity, TextDocumentId, TextDocumentRevision, TextDocumentSnapshot, TextPosition,
+    TextSelection, Typography, UiApp, UpdateOutput, View, WorkResidencyBudget, WorkStartBudget,
+    button, column, row, text, text_field,
 };
 
 pub use host::install;
@@ -20,8 +21,9 @@ const DRAFT_DOCUMENT_ID: TextDocumentId = TextDocumentId::new(1);
 // Keep the mounted UI independent of the storage model's 10,000-task capacity.
 // RunenUI does not yet expose a virtualized list; page the application-owned
 // collection instead of reserving unbounded routed focus/output capacity.
-const TASKS_PER_PAGE: usize = 16;
-const BASE_UI_NODES: usize = 6;
+const TASKS_PER_PAGE: usize = 8;
+// Header, composer, section labels, root, empty/error state.
+const BASE_UI_NODES: usize = 13;
 const TASK_UI_NODES: usize = 4;
 const PAGE_UI_NODES: usize = 4;
 const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAGE_UI_NODES;
@@ -29,6 +31,18 @@ const MAX_UI_NODES: usize = BASE_UI_NODES + TASK_UI_NODES * TASKS_PER_PAGE + PAG
 // paging actions. Focus transfer can route each event-bearing widget four
 // times; ordinary routing and framework defaults require additional headroom.
 const MAX_INTERACTION_OUTPUTS: usize = 4 * (4 + 2 * TASKS_PER_PAGE) + 4;
+
+fn ui_font(size: u16, bold: bool) -> Typography {
+    let typography = Typography::new(
+        FontFamily::generic(GenericFontFamily::SansSerif),
+        LogicalLength::from(size),
+    );
+    if bold {
+        typography.with_weight(FontWeight::BOLD)
+    } else {
+        typography
+    }
+}
 
 pub struct TodoUi;
 
@@ -148,8 +162,31 @@ impl UiApp for TodoUi {
         )
         .expect("Todo owns a valid UTF-8 edit selection");
 
+        let tasks = state.service.tasks();
+        let completed = tasks.iter().filter(|task| task.completed()).count();
+        let open = tasks.len() - completed;
         let mut content: Vec<Element<TodoAction>> = vec![
-            text("Todo").key("todo.heading").into_element(),
+            column([
+                text("RUNEN LAB  /  DESKTOP")
+                    .foreground(Color::rgb(108, 133, 157))
+                    .typography(ui_font(11, false))
+                    .key("todo.eyebrow")
+                    .into_element(),
+                text("Your tasks")
+                    .id("todo.heading")
+                    .foreground(Color::rgb(242, 246, 251))
+                    .typography(ui_font(30, true))
+                    .key("todo.heading")
+                    .into_element(),
+                text(format!("{open} open  /  {completed} completed"))
+                    .foreground(Color::rgb(158, 176, 192))
+                    .typography(ui_font(13, false))
+                    .key("todo.summary")
+                    .into_element(),
+            ])
+            .gap(LogicalLength::from(3_u16))
+            .key("todo.header")
+            .into_element(),
             row([
                 text_field(
                     snapshot,
@@ -161,53 +198,151 @@ impl UiApp for TodoUi {
                 .expect("Todo draft is always normalized single-line text")
                 .id("todo.new-task")
                 .key("todo.new-task")
-                // Reserve a usable entry width even when the document is empty;
-                // the visual placeholder does not supply its intrinsic width.
                 .with_layout(
                     LayoutStyle::default()
-                        .with_width(LayoutDimension::length(LogicalLength::from(240_u16))),
+                        .with_width(LayoutDimension::length(LogicalLength::from(240_u16)))
+                        .with_min_width(LayoutBound::length(LogicalLength::from(110_u16)))
+                        .with_flex_item(
+                            FlexItemStyle::default().with_grow(LayoutFactor::ONE),
+                        ),
                 )
-                .placeholder("New task")
-                .on_submit(|| TodoAction::AddTask)
+                .placeholder("What needs doing?")
+                .background(Color::rgb(34, 46, 64))
+                .foreground(Color::rgb(242, 246, 251))
+                .padding(EdgeInsets::symmetric(
+                    LogicalLength::from(11_u16),
+                    LogicalLength::from(9_u16),
+                ))
+                .radius(Radius::all(LogicalLength::from(8_u16)))
                 .into_element(),
-                button("Add")
+                button("Add task")
                     .id("todo.add")
                     .key("todo.add")
                     .on_activate(|| TodoAction::AddTask)
+                    .background(Color::rgb(107, 222, 188))
+                    .foreground(Color::rgb(12, 33, 34))
+                    .typography(ui_font(13, true))
+                    .padding(EdgeInsets::symmetric(
+                        LogicalLength::from(15_u16),
+                        LogicalLength::from(11_u16),
+                    ))
+                    .radius(Radius::all(LogicalLength::from(8_u16)))
                     .into_element(),
             ])
+            .gap(LogicalLength::from(10_u16))
+            .background(Color::rgb(24, 33, 47))
+            .padding(EdgeInsets::all(LogicalLength::from(10_u16)))
+            .radius(Radius::all(LogicalLength::from(12_u16)))
             .key("todo.new-task-row")
+            .into_element(),
+            row([
+                text("TASKS")
+                    .foreground(Color::rgb(158, 176, 192))
+                    .typography(ui_font(12, true))
+                    .key("todo.section-title")
+                    .into_element(),
+                text(format!("{} total", tasks.len()))
+                    .foreground(Color::rgb(108, 133, 157))
+                    .typography(ui_font(12, false))
+                    .key("todo.total")
+                    .into_element(),
+            ])
+            .gap(LogicalLength::from(14_u16))
+            .key("todo.section")
             .into_element(),
         ];
 
-        if state.service.tasks().is_empty() {
-            content.push(text("No tasks yet.").key("todo.empty").into_element());
+        if tasks.is_empty() {
+            content.push(
+                column([
+                    text("Nothing here yet")
+                        .foreground(Color::rgb(226, 236, 244))
+                        .typography(ui_font(17, true))
+                        .key("todo.empty-title")
+                        .into_element(),
+                    text("Add your first task above to get started.")
+                        .foreground(Color::rgb(155, 174, 192))
+                        .typography(ui_font(13, false))
+                        .key("todo.empty-description")
+                        .into_element(),
+                ])
+                .gap(LogicalLength::from(6_u16))
+                .background(Color::rgb(24, 33, 47))
+                .padding(EdgeInsets::all(LogicalLength::from(18_u16)))
+                .radius(Radius::all(LogicalLength::from(12_u16)))
+                .key("todo.empty")
+                .into_element(),
+            );
         } else {
             for task in state.visible_tasks() {
                 let id = task.id();
                 let completed = task.completed();
-                let label = if completed {
-                    format!("Done: {}", task.title())
-                } else {
-                    task.title().to_owned()
-                };
                 content.push(
                     row([
                         button(if completed { "Reopen" } else { "Complete" })
+                            .id(format!("task.{}.toggle", id.get()))
                             .key(format!("task.{}.toggle", id.get()))
                             .on_activate(move || TodoAction::SetCompleted {
                                 id,
                                 completed: !completed,
                             })
+                            .foreground(if completed {
+                                Color::rgb(160, 185, 197)
+                            } else {
+                                Color::rgb(12, 33, 34)
+                            })
+                            .background(if completed {
+                                Color::rgb(45, 58, 72)
+                            } else {
+                                Color::rgb(107, 222, 188)
+                            })
+                            .typography(ui_font(12, true))
+                            .padding(EdgeInsets::symmetric(
+                                LogicalLength::from(9_u16),
+                                LogicalLength::from(6_u16),
+                            ))
+                            .radius(Radius::all(LogicalLength::from(7_u16)))
                             .into_element(),
-                        text(label)
+                        text(task.title())
                             .key(format!("task.{}.title", id.get()))
+                            .foreground(if completed {
+                                Color::rgb(120, 141, 158)
+                            } else {
+                                Color::rgb(233, 241, 248)
+                            })
+                            .typography(ui_font(14, false))
+                            .with_layout(
+                                LayoutStyle::default().with_flex_item(
+                                    FlexItemStyle::default().with_grow(LayoutFactor::ONE),
+                                ),
+                            )
                             .into_element(),
                         button("Remove")
+                            .id(format!("task.{}.remove", id.get()))
                             .key(format!("task.{}.remove", id.get()))
                             .on_activate(move || TodoAction::RemoveTask(id))
+                            .foreground(Color::rgb(149, 165, 181))
+                            .background(Color::rgb(37, 48, 63))
+                            .typography(ui_font(12, false))
+                            .padding(EdgeInsets::symmetric(
+                                LogicalLength::from(8_u16),
+                                LogicalLength::from(6_u16),
+                            ))
+                            .radius(Radius::all(LogicalLength::from(7_u16)))
                             .into_element(),
                     ])
+                    .gap(LogicalLength::from(10_u16))
+                    .background(if completed {
+                        Color::rgb(22, 29, 40)
+                    } else {
+                        Color::rgb(28, 38, 53)
+                    })
+                    .padding(EdgeInsets::symmetric(
+                        LogicalLength::from(10_u16),
+                        LogicalLength::from(6_u16),
+                    ))
+                    .radius(Radius::all(LogicalLength::from(9_u16)))
+                    .id(format!("task.{}.row", id.get()))
                     .key(format!("task.{}.row", id.get()))
                     .into_element(),
                 );
@@ -222,6 +357,13 @@ impl UiApp for TodoUi {
                         .key("todo.page.previous")
                         .enabled(state.page_index > 0)
                         .on_activate(|| TodoAction::PreviousPage)
+                        .foreground(Color::rgb(207, 222, 234))
+                        .background(Color::rgb(40, 53, 69))
+                        .padding(EdgeInsets::symmetric(
+                            LogicalLength::from(10_u16),
+                            LogicalLength::from(6_u16),
+                        ))
+                        .radius(Radius::all(LogicalLength::from(7_u16)))
                         .into_element(),
                     text(format!(
                         "Page {} of {}",
@@ -230,14 +372,24 @@ impl UiApp for TodoUi {
                     ))
                     .id("todo.page.label")
                     .key("todo.page.label")
+                    .foreground(Color::rgb(150, 169, 186))
+                    .typography(ui_font(12, false))
                     .into_element(),
                     button("Next")
                         .id("todo.page.next")
                         .key("todo.page.next")
                         .enabled(state.page_index + 1 < state.page_count())
                         .on_activate(|| TodoAction::NextPage)
+                        .foreground(Color::rgb(207, 222, 234))
+                        .background(Color::rgb(40, 53, 69))
+                        .padding(EdgeInsets::symmetric(
+                            LogicalLength::from(10_u16),
+                            LogicalLength::from(6_u16),
+                        ))
+                        .radius(Radius::all(LogicalLength::from(7_u16)))
                         .into_element(),
                 ])
+                .gap(LogicalLength::from(12_u16))
                 .key("todo.page.row")
                 .into_element(),
             );
@@ -245,7 +397,11 @@ impl UiApp for TodoUi {
 
         if let Some(error) = &state.error {
             content.push(
-                text(format!("Error: {error}"))
+                text(format!("Action failed: {error}"))
+                    .foreground(Color::rgb(255, 174, 178))
+                    .background(Color::rgb(68, 35, 47))
+                    .padding(EdgeInsets::all(LogicalLength::from(10_u16)))
+                    .radius(Radius::all(LogicalLength::from(8_u16)))
                     .key("todo.error")
                     .into_element(),
             );
@@ -253,6 +409,13 @@ impl UiApp for TodoUi {
 
         column(content)
             .key("todo.root")
+            .gap(LogicalLength::from(8_u16))
+            .padding(EdgeInsets::all(LogicalLength::from(14_u16)))
+            .with_layout(
+                LayoutStyle::default()
+                    .with_width(LayoutDimension::Fill)
+                    .with_max_width(LayoutBound::length(LogicalLength::from(780_u16))),
+            )
             .foreground(Color::rgb(238, 240, 246))
     }
 
@@ -265,17 +428,51 @@ impl UiApp for TodoUi {
                 let range = intent.replacement();
                 let request = intent.request().clone();
                 let replacement = range.start()..range.end();
-                if state.draft.get(replacement.clone()).is_none() {
-                    state.error = Some("Rejected a stale or invalid text edit".to_owned());
+                // An input proposal may arrive after Enter has committed and
+                // cleared the draft. Reject it against the authoritative document,
+                // never turn an editor conflict into a persisted-task error.
+                let mut next_draft = state.draft.clone();
+                if next_draft.get(replacement.clone()).is_none() {
+                    eprintln!(
+                        "todo.editor: rejected out-of-range edit; revision={}, bytes={}, range={}..{}, inserted_bytes={}",
+                        state.draft_revision,
+                        state.draft.len(),
+                        range.start(),
+                        range.end(),
+                        intent.replacement_text().len()
+                    );
                     return UpdateOutput::edit(EditResolution::rejected(
                         request,
                         state.draft_snapshot(),
                     ));
                 }
-                state
-                    .draft
-                    .replace_range(replacement, intent.replacement_text());
-                state.draft_selection = intent.proposed_selection().active();
+                next_draft.replace_range(replacement, intent.replacement_text());
+                let next_selection = intent.proposed_selection().active();
+                let next_snapshot = TextDocumentSnapshot::new(
+                    DRAFT_DOCUMENT_ID,
+                    TextDocumentRevision::new(state.draft_revision + 1),
+                );
+                if TextPosition::new(
+                    next_snapshot,
+                    &next_draft,
+                    next_selection,
+                    TextAffinity::Downstream,
+                )
+                .is_err()
+                    || next_draft.chars().any(char::is_control)
+                {
+                    eprintln!(
+                        "todo.editor: rejected invalid resulting text/selection; revision={}, bytes={}",
+                        state.draft_revision,
+                        next_draft.len()
+                    );
+                    return UpdateOutput::edit(EditResolution::rejected(
+                        request,
+                        state.draft_snapshot(),
+                    ));
+                }
+                state.draft = next_draft;
+                state.draft_selection = next_selection;
                 state.draft_revision += 1;
                 state.error = None;
                 UpdateOutput::edit(EditResolution::accepted(request, state.draft_snapshot()))

@@ -26,9 +26,13 @@ and unit tests alone do **not** establish that the GUI works.
 
 Enter a title and press Enter or select **Add**. Each task has a **Complete** / **Reopen**
 control and **Remove**. Changes are validated and saved before the in-memory task state is
-committed. Errors appear in the UI instead of silently erasing saved state.
+committed. Task-operation and persistence errors appear in the UI instead of silently erasing saved state.
+Out-of-range or invalid text-edit proposals are rejected by the editor contract and logged
+to stderr as `todo.editor` diagnostics, without being represented as storage errors.
+Capture diagnostics from a terminal when reporting input trouble; they do not
+contain the task text.
 
-The UI displays at most **16 task rows per page**, with Previous/Next navigation
+The UI displays at most **8 task rows per page**, with Previous/Next navigation
 when more tasks exist. This bounds the mounted RunenUI tree and routed input budget
 independently of the model's 10,000-task storage limit. Navigating pages does not
 modify the saved tasks; adding a task selects its page, and removal clamps the
@@ -47,6 +51,14 @@ An existing malformed or unsupported file causes startup to fail rather than bei
 This first iteration is **single-writer**. Running concurrent instances against the same data
 file is not supported; a future terminal or agent controller must operate through a single live
 application owner, not independently modify its backing file.
+
+## Desktop presentation
+
+The interface uses RunenUI's public layout and style primitives: a visual heading,
+open/completed counts, a bounded editable composer, readable task cards and
+state-specific actions. No separate UI toolkit or framework fork is involved.
+Eight rows per page keep controls within the normal 800×600 desktop viewport;
+the full task collection remains in durable storage.
 
 ## Terminal-only development workflow
 
