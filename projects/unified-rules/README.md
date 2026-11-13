@@ -56,6 +56,32 @@ engine.rule::<TotalHealth>(|ctx, key| {
 
 This API direction is not a ratified public contract. It demonstrates a correctness-first collection read for independent consumers, not a replacement for a production query/aggregation system.
 
+## Domain-neutral API candidate: ordinary typed functions (research only)
+
+The separately compiled `tests/function_api_candidate.rs` probes whether an ordinary Rust closure can register a rule **without exposing `RuleCx`, manual key iteration, or a scheduler**:
+
+```rust
+application.derive(|price: &UnitPrice, quantity: &Quantity| {
+    LineSubtotal(price.0 * quantity.0)
+})?;
+```
+
+This is deliberately a **test-local candidate adapter** over the same `Engine::rule` kernel, **not** a second ratified public runtime API, an accepted design, or an implementation of arbitrary tracked Rust functions. Its generic `Inject<Inputs, Output>` implementations cover only 1–3 *required*, infallible, cloned, **same-record** inputs. It is exercised by non-game invoice/document/form consumers. The same source rules still provide retraction, invalidation, and atomic rejected writes.
+
+**Confirmed expressiveness boundary to investigate before adoption:** global aggregates still need a fabricated `Key` and manually authored `ctx.all::<T>()`, as shown by the explicit negative-ergonomics test. The candidate also cannot express dynamic cross-record parent lookups, previous state/ticks, multiple occurrences, and fallible computations using its current signature. Adding one specialized public registration method for each case would undermine the requirement for a coherent model. Borrowed inputs are function-local references to **cloned** values, not direct storage borrows; output and input type bounds are unchanged. Therefore this candidate tests one useful syntax **without proving a universal model or beating Bevy**.
+
+| Candidate family | Generalizable strength | Unresolved issue |
+| --- | --- | --- |
+| Ordinary injected Rust functions | Familiar Rust expressions, simple required-input derivations | Output scope, optional/dynamic reads, fallibility, temporal feedback, events/effects |
+| Tracked query functions (Salsa-like) | Per-key/on-demand memoization, dynamic input dependencies, native Rust | Collection membership, multiset deltas, side effects and temporal authority |
+| Relational/dataflow rules (Ascent/Differential-like) | Relations, joins, closure, group reductions | Feedback time, imperative effects, Rust borrow/ownership ergonomics |
+| Current context callback | Already qualified for mixed semantic game workloads | Verbose, keyed-only outputs, cloned data, broad collection invalidation |
+| Custom equation syntax | Potentially concise typed declarations | Unproven Rust parse/expansion, errors, generic code, non-pure effects |
+
+**Architectural next decision:** establish a *domain-neutral semantic unit* that distinguishes keyed records, unkeyed/global values, collections/relations, temporal state, occurrences and externally executed effects. Then compare complete function and declarative rule candidates against identical non-game **and** movement/hierarchy/event consumers; require compiler/negative tests and measured application code rather than choosing a macro from sketches. The existence of a generic `Key` does not itself justify making every output key-scoped.
+
+**References (conceptual, not adopted dependencies):** [Salsa](https://docs.rs/salsa/latest/salsa/), [Ascent](https://docs.rs/ascent/latest/ascent/), [Differential Dataflow](https://docs.rs/differential-dataflow/latest/differential_dataflow/).
+
 ## Reproduce
 
 ```sh
