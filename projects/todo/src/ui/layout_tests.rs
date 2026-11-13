@@ -482,7 +482,9 @@ fn persisted_task_initial_mount_and_original_pointer_remain_running() {
 
     let restored = TodoUiState::new(TodoService::at(storage.clone()).unwrap());
     assert_eq!(restored.service.tasks().len(), 1);
-    let mut runtime = AppRuntime::<TodoUi>::mount(restored)
+    let config = runenui_runtime::RuntimeConfig::default()
+        .with_trace_config(runenui_runtime::TraceConfig::new(1024));
+    let mut runtime = AppRuntime::<TodoUi>::mount_with_config(restored, config)
         .expect("persisted one-task Todo must fit initial producer budget");
     assert!(runtime.register_text_font_bytes(FONT.to_vec()).unwrap() > 0);
     runtime
@@ -542,6 +544,11 @@ fn persisted_task_initial_mount_and_original_pointer_remain_running() {
         let batch = runtime
             .pump(PumpBudget::new(128, 128, 128, 128))
             .expect("restored Todo canonical M13 pointer pump");
+        if batch.final_ownership().status() != RuntimeStatus::Running {
+            let trace_kinds = runtime.trace().kinds().collect::<Vec<_>>();
+            let tail = &trace_kinds[trace_kinds.len().saturating_sub(64)..];
+            eprintln!("restored_pointer_phase={phase:?} trace_kinds={tail:?}");
+        }
         assert!(
             batch.pause_reason().is_none()
                 && batch.final_ownership().status() == RuntimeStatus::Running
