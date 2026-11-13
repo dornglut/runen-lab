@@ -407,7 +407,11 @@ impl Engine {
 
         // Despawned nodes have no tasks to evaluate in the staged world.
         // Preserve their prior derived values' removal facts explicitly.
-        let removed_keys: Vec<_> = self.world.live.values().copied()
+        let removed_keys: Vec<_> = self
+            .world
+            .live
+            .values()
+            .copied()
             .filter(|&key| !proposed.contains(key))
             .collect();
 
@@ -460,13 +464,19 @@ impl Engine {
         }
         for key in removed_keys {
             for rule in &self.rules {
-                if self.world.columns.get(&rule.output)
+                if self
+                    .world
+                    .columns
+                    .get(&rule.output)
                     .is_some_and(|column| column.contains(key))
                 {
-                    evaluator.output_changes.insert(Fact {
-                        ty: rule.output,
-                        key,
-                    }, ChangeKind::Removed);
+                    evaluator.output_changes.insert(
+                        Fact {
+                            ty: rule.output,
+                            key,
+                        },
+                        ChangeKind::Removed,
+                    );
                 }
             }
         }

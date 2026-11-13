@@ -546,14 +546,16 @@ fn despawn_produces_typed_derived_removal_and_reuse_is_new_occurrence() -> Resul
         tx.put(CLOCK, Step { epoch: 1, dt: 1 })?;
         Ok(())
     })?;
-    assert_eq!(game.changes::<ContactOccurrence>(), vec![
-        OutputChange::Added(original, ContactOccurrence(1)),
-    ]);
+    assert_eq!(
+        game.changes::<ContactOccurrence>(),
+        vec![OutputChange::Added(original, ContactOccurrence(1)),]
+    );
     game.transact(|tx| tx.despawn(original))?;
     assert_eq!(game.get::<ContactOccurrence>(original), None);
-    assert_eq!(game.changes::<ContactOccurrence>(), vec![
-        OutputChange::Removed(original),
-    ]);
+    assert_eq!(
+        game.changes::<ContactOccurrence>(),
+        vec![OutputChange::Removed(original),]
+    );
     let fresh = Key::new(9, 2);
     game.transact(|tx| {
         tx.spawn(fresh)?;
@@ -561,8 +563,9 @@ fn despawn_produces_typed_derived_removal_and_reuse_is_new_occurrence() -> Resul
         Ok(())
     })?;
     assert_eq!(game.get::<ContactOccurrence>(original), None);
-    assert_eq!(game.changes::<ContactOccurrence>(), vec![
-        OutputChange::Added(fresh, ContactOccurrence(1)),
-    ]);
+    assert_eq!(
+        game.changes::<ContactOccurrence>(),
+        vec![OutputChange::Added(fresh, ContactOccurrence(1)),]
+    );
     Ok(())
 }
