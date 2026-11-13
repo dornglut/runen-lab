@@ -188,6 +188,10 @@ persistence or transport adapters. A test *demonstrates* that arbitrary Rust
 callback I/O cannot be rolled back: using `Rc<Cell<_>>` inside a rule can
 change external state before a later rule rejects the transaction. The
 `request` API is therefore a safer path, not an enforced purity guarantee.
+A second negative test shows that **a changed unrelated tracked input can
+reevaluate an unchanged business condition and stage a duplicate command**.
+Process-local request IDs are unique, but cannot deduplicate a logical action.
+
 
 The independently compiling `tests/effect_request_candidate.rs` probes
 multiple keyed/global effect producers, typed filtering, distinct IDs,

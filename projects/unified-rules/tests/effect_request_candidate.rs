@@ -215,3 +215,34 @@ fn direct_effect_in_callback_is_not_rollback_safe_negative_oracle() -> Result<()
     // effects executed directly inside callbacks. No purity claim is valid.
     Ok(())
 }
+
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Noise(u32);
+
+#[test]
+fn unchanged_business_condition_can_duplicate_requests_after_invalidation() -> Result<(), Error> {
+    let mut app = Engine::new();
+    app.compute::<One<GlobalProducer>>(|cx, ()| {
+        let active = cx.singleton::<Trigger>()? == Some(Trigger(true));
+        let _other_dependency = cx.singleton::<Noise>()?;
+        if active {
+            cx.request(Message { number: 99 })?;
+        }
+        Ok(Some(GlobalProducer))
+    })?;
+    app.transact(|tx| {
+        tx.put_singleton(Trigger(true))?;
+        tx.put_singleton(Noise(1))
+    })?;
+    let first = app.pending_effects::<Message>();
+    assert_eq!(first.len(), 1);
+
+    // The business trigger stays true, but a second read dependency changes.
+    app.transact(|tx| tx.put_singleton(Noise(2)))?;
+    let after = app.pending_effects::<Message>();
+    assert_eq!(after.len(), 2);
+    assert_eq!(after[0].value, after[1].value);
+    assert_ne!(after[0].id, after[1].id);
+    Ok(())
+}

@@ -173,6 +173,11 @@ pure callbacks, transactionally isolated I/O, or external exactly-once
 execution. This is a **request-protocol experiment**, not a reliability
 or concurrency implementation.
 
+**Additional counterexample:** A rule that requests work while a predicate
+is true creates another identical logical request when any other tracked input
+invalidates it—even though the business predicate stayed true. IDs differ,
+but that does not establish transition-only emission or external idempotency.
+
 **Remaining delivery gap:** IDs and pending entries are lost at process
 restart; there is no stable cross-run identity, persisted queue, transport
 or retries/leases. The consumer might submit a command and crash before
@@ -187,10 +192,10 @@ scheduler API.
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in
-one evaluator; D adds monotonic clock source scopes and commit-local
-occurrence origins. Neither establishes collection-valued outputs, explicit
-time coordinates, externally executed requests or acknowledgments through a
-complete API. Investigate these remaining dimensions **without introducing
+one evaluator; D adds scoped monotonic clocks and commit-local occurrences;
+E proves memory-only retained requests and explicit in-memory acknowledgments.
+None establishes collection-valued outputs, temporal coordinates, guaranteed
+callback purity or crash-safe effects through one complete API. Investigate these remaining dimensions **without introducing
 multiple application-facing programming paradigms**. Compile-execute both function-first and relational
 frontends across the same non-game and movement/hierarchy/event consumers,
 including explicit external-effect semantics. Test rustc
