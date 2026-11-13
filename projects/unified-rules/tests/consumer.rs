@@ -83,7 +83,7 @@ fn new_game() -> Engine {
 }
 
 #[test]
-fn dense_movement_uses_explicit_feedback_without_instantaneous_cycle() -> Result<(), Error> {
+fn dense_movement_derived_output_does_not_mutate_source_state() -> Result<(), Error> {
     let mut game = new_game();
     const COUNT: u32 = 1024;
     game.transact(|tx| {
@@ -104,18 +104,11 @@ fn dense_movement_uses_explicit_feedback_without_instantaneous_cycle() -> Result
         assert_eq!(game.get::<Position>(id), Some(Position(i64::from(slot))));
     }
 
-    game.promote::<NextPosition, Position, _>(|position| Position(position.0))?;
-    for slot in 1..=COUNT {
-        let id = Key::new(slot, 1);
-        let expected = i64::from(slot) + 2 * (i64::from(slot) % 7);
-        assert_eq!(game.get::<Position>(id), Some(Position(expected)));
-    }
-
     let target = Key::new(43, 1);
     game.transact(|tx| tx.put(target, Velocity(99)))?;
     // Only the target's NextPosition computation is invalidated.
     assert_eq!(game.last_evaluations(), 1);
-    assert_eq!(game.get::<NextPosition>(target), Some(NextPosition(243)));
+    assert_eq!(game.get::<NextPosition>(target), Some(NextPosition(241)));
     Ok(())
 }
 

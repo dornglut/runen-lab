@@ -481,24 +481,5 @@ impl Engine {
         Ok(())
     }
 
-    /// Explicit epoch-boundary promotion of derived next-state into input
-    /// state. Prevents same-epoch feedback loops without a second rule API.
-    pub fn promote<From, To, F>(&mut self, map: F) -> Result<(), Error>
-    where
-        From: Clone + Eq + 'static,
-        To: Clone + Eq + 'static,
-        F: Fn(From) -> To,
-    {
-        let updates: Vec<_> = self
-            .keys()
-            .into_iter()
-            .filter_map(|key| self.get::<From>(key).map(|value| (key, map(value))))
-            .collect();
-        self.transact(|tx| {
-            for (key, value) in updates {
-                tx.put::<To>(key, value)?;
-            }
-            Ok(())
-        })
-    }
+
 }
