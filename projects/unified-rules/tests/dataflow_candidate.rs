@@ -156,11 +156,44 @@ fn invoice_fixture(model: &mut Engine) -> Result<(), Error> {
             tx.spawn(id)?;
         }
         tx.put(CLOCK, Day(10))?;
-        tx.put(INVOICE_A, Invoice { due: 11, paid: false })?;
-        tx.put(INVOICE_B, Invoice { due: 14, paid: false })?;
-        tx.put(FIRST, Line { invoice: INVOICE_A, price: 10, quantity: 2 })?;
-        tx.put(SECOND, Line { invoice: INVOICE_A, price: 4, quantity: 3 })?;
-        tx.put(THIRD, Line { invoice: INVOICE_B, price: 6, quantity: 5 })?;
+        tx.put(
+            INVOICE_A,
+            Invoice {
+                due: 11,
+                paid: false,
+            },
+        )?;
+        tx.put(
+            INVOICE_B,
+            Invoice {
+                due: 14,
+                paid: false,
+            },
+        )?;
+        tx.put(
+            FIRST,
+            Line {
+                invoice: INVOICE_A,
+                price: 10,
+                quantity: 2,
+            },
+        )?;
+        tx.put(
+            SECOND,
+            Line {
+                invoice: INVOICE_A,
+                price: 4,
+                quantity: 3,
+            },
+        )?;
+        tx.put(
+            THIRD,
+            Line {
+                invoice: INVOICE_B,
+                price: 6,
+                quantity: 5,
+            },
+        )?;
         Ok(())
     })
 }
@@ -175,11 +208,29 @@ fn domain_neutral_relational_join_retraction_and_temporal_event() -> Result<(), 
     assert!(model.events::<Reminder>().is_empty());
 
     // Changed member, reparented relationship, and group-membership replacement.
-    model.transact(|tx| tx.put(FIRST, Line { invoice: INVOICE_A, price: 10, quantity: 4 }))?;
+    model.transact(|tx| {
+        tx.put(
+            FIRST,
+            Line {
+                invoice: INVOICE_A,
+                price: 10,
+                quantity: 4,
+            },
+        )
+    })?;
     assert_eq!(model.get::<InvoiceTotal>(INVOICE_A), Some(InvoiceTotal(52)));
     assert_eq!(model.get::<Outstanding>(SUMMARY), Some(Outstanding(82)));
 
-    model.transact(|tx| tx.put(SECOND, Line { invoice: INVOICE_B, price: 4, quantity: 3 }))?;
+    model.transact(|tx| {
+        tx.put(
+            SECOND,
+            Line {
+                invoice: INVOICE_B,
+                price: 4,
+                quantity: 3,
+            },
+        )
+    })?;
     assert_eq!(model.get::<InvoiceTotal>(INVOICE_A), Some(InvoiceTotal(40)));
     assert_eq!(model.get::<InvoiceTotal>(INVOICE_B), Some(InvoiceTotal(42)));
     assert_eq!(model.get::<Outstanding>(SUMMARY), Some(Outstanding(82)));
@@ -214,9 +265,20 @@ fn domain_neutral_relational_join_retraction_and_temporal_event() -> Result<(), 
     model.transact(|tx| tx.remove::<Line>(THIRD))?;
     assert_eq!(model.get::<InvoiceTotal>(INVOICE_B), Some(InvoiceTotal(12)));
     assert_eq!(model.get::<Outstanding>(SUMMARY), Some(Outstanding(52)));
-    assert_eq!(model.changes::<LineTotal>(), vec![OutputChange::Removed(THIRD)]);
+    assert_eq!(
+        model.changes::<LineTotal>(),
+        vec![OutputChange::Removed(THIRD)]
+    );
 
-    model.transact(|tx| tx.put(INVOICE_A, Invoice { due: 11, paid: true }))?;
+    model.transact(|tx| {
+        tx.put(
+            INVOICE_A,
+            Invoice {
+                due: 11,
+                paid: true,
+            },
+        )
+    })?;
     assert_eq!(model.get::<Outstanding>(SUMMARY), Some(Outstanding(12)));
     assert_eq!(model.get::<Overdue>(INVOICE_A), Some(Overdue(false)));
     Ok(())
