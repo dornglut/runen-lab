@@ -633,7 +633,8 @@ struct EventRule {
     ty: TypeId,
     evaluate: Rc<EventFn>,
 }
-impl<T: Clone + Eq + 'static> OutputShape for On<T> {
+// Occurrences have identity and order: equality of payload values is unnecessary.
+impl<T: Clone + 'static> OutputShape for On<T> {
     type At = T;
     type Value = ();
 

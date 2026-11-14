@@ -29,10 +29,10 @@ struct Targeted<E> {
 }
 
 trait EmitTo {
-    fn emit_to<E: Clone + Eq + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error>;
+    fn emit_to<E: Clone + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error>;
 }
 impl EmitTo for Transaction<'_> {
-    fn emit_to<E: Clone + Eq + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error> {
+    fn emit_to<E: Clone + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error> {
         self.emit(Targeted { entity, value })
     }
 }
@@ -125,7 +125,7 @@ where
 
 impl<F, E, T> Install<TargetMutation<E, T>> for F
 where
-    E: Clone + Eq + 'static,
+    E: Clone + 'static,
     T: Clone + Eq + 'static,
     F: Fn(&E, &mut T) -> Result<(), Error> + 'static,
 {
@@ -139,7 +139,7 @@ where
 
 impl<F, E> Install<OccurrenceHandler<E>> for F
 where
-    E: Clone + Eq + 'static,
+    E: Clone + 'static,
     F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, E) -> Result<(), Error> + 'static,
 {
     fn install(self, app: &mut Engine) -> Result<(), Error> {
@@ -588,5 +588,40 @@ fn same_function_contract_supports_fallible_invoice_updates_optional_retractions
         app.changes::<Outstanding>(),
         vec![OutputChange::Removed(row)]
     );
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AnalogHit(f32);
+
+fn analog_damage(hit: &AnalogHit, health: &mut Health) -> Result<(), Error> {
+    if !hit.0.is_finite() || hit.0.is_sign_negative() {
+        return Err(Error::Overflow);
+    }
+    health.0 = health.0.saturating_sub(hit.0 as u32);
+    Ok(())
+}
+
+#[test]
+fn ordinary_event_function_accepts_non_eq_payload_and_rolls_back_invalid_value()
+-> Result<(), Error> {
+    let mut app = Engine::new();
+    app.register(analog_damage)?;
+    let target = Key::new(33, 1);
+    app.transact(|tx| {
+        tx.spawn(target)?;
+        tx.put(target, Health(20))
+    })?;
+
+    app.transact(|tx| tx.emit_to(target, AnalogHit(3.5)))?;
+    assert_eq!(app.get::<Health>(target), Some(Health(17)));
+    assert_eq!(app.occurrences::<Targeted<AnalogHit>>().len(), 1);
+
+    assert_eq!(
+        app.transact(|tx| tx.emit_to(target, AnalogHit(f32::NAN))),
+        Err(Error::Overflow)
+    );
+    assert_eq!(app.get::<Health>(target), Some(Health(17)));
+    assert_eq!(app.occurrences::<Targeted<AnalogHit>>().len(), 1);
     Ok(())
 }
