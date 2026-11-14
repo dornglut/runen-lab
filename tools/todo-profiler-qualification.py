@@ -33,7 +33,25 @@ m13_keys = {
     "terminal_receipts_total", "sampled_receipts", "omitted_receipts",
     "processed_through", "paused",
 }
-receipt_keys = {"sequence", "finality", "ownership_revision"}
+receipt_keys = {"sequence", "finality", "ownership_revision", "pointer_trace"}
+pointer_trace_keys = {
+    "sequence", "status", "phase", "displayed_hit_generation",
+    "displayed_snapshot", "physical_target_present", "physical_path_depth",
+    "matches_previous_down_physical_target", "pointer_default",
+    "activation_trace", "trace_evicted_before",
+}
+pointer_statuses = {
+    "unavailable_no_canonical_pointer_trace",
+    "unavailable_no_physical_observation",
+    "observed_committed_pointer_transaction",
+    "physical_observed_without_routed_commit",
+}
+pointer_phases = {None, "move", "down", "up", "cancel", "wheel", "unknown"}
+pointer_snapshots = {None, "current", "retained_historical"}
+pointer_defaults = {None, "applied", "suppressed"}
+activation_states = {
+    "unavailable", "collected", "not_observed_in_retained_trace",
+}
 stats_keys = {
     "domain", "stage", "window", "ui_slot", "sample_count", "median_ns",
     "p95_ns", "duration_histogram_ns",
@@ -56,16 +74,25 @@ all_events = 0
 all_m13 = 0
 committed_receipts = 0
 productive_m13_pumps = 0
+pointer_physical_observations = 0
+pointer_activations_collected = 0
+pointer_previous_down_mismatches = 0
+pointer_missing_trace = 0
+pointer_retained_snapshots = 0
+pointer_rejected_input = 0
 all_render = 0
 seen_ids = set()
 for path in outputs:
     if path.stat().st_size > 8 * 1024 * 1024:
         raise SystemExit("privacy/capacity HOLD: oversized profiler file")
     raw = path.read_bytes()
-    if any(token in raw.lower() for token in (b"bulk 1", b'"x11"', b'"enter"', b"runen lab - todo")):
+    if (
+        re.search(rb"bulk\s+[1-9]", raw.lower())
+        or any(token in raw.lower() for token in (b'"x11"', b'"enter"', b"runen lab - todo"))
+    ):
         raise SystemExit("privacy HOLD: controlled Todo task value or title in raw capture")
     data = json.loads(raw)
-    if set(data) != top or data["schema_version"] != 1:
+    if set(data) != top or data["schema_version"] != 2:
         raise SystemExit("schema HOLD: unknown capture fields or revision")
     if data["source_revision"] != expected:
         raise SystemExit("provenance HOLD: compiled source revision mismatch")
@@ -79,6 +106,9 @@ for path in outputs:
     if not isinstance(events, list) or len(events) > 16384:
         raise SystemExit("capacity HOLD: invalid CPU event count")
     previous = 0
+    local_activations = 0
+    local_physical = 0
+    local_rejected = 0
     for event in events:
         if set(event) != event_keys or event["domain"] not in domains:
             raise SystemExit("schema/privacy HOLD: unexpected CPU observation fields")
@@ -93,8 +123,47 @@ for path in outputs:
             for receipt in m13["sampled_receipts"]:
                 if set(receipt) != receipt_keys:
                     raise SystemExit("schema/privacy HOLD: unexpected M13 receipt fields")
+                pointer = receipt["pointer_trace"]
+                if not isinstance(pointer, dict) or set(pointer) != pointer_trace_keys:
+                    raise SystemExit("schema/privacy HOLD: unexpected canonical pointer fields")
+                if (
+                    pointer["sequence"] != receipt["sequence"]
+                    or pointer["status"] not in pointer_statuses
+                    or pointer["phase"] not in pointer_phases
+                    or pointer["displayed_snapshot"] not in pointer_snapshots
+                    or pointer["pointer_default"] not in pointer_defaults
+                    or pointer["activation_trace"] not in activation_states
+                ):
+                    raise SystemExit("correlation/enum HOLD: invalid source pointer trace")
+                for key in ("displayed_hit_generation", "physical_path_depth", "trace_evicted_before"):
+                    number = pointer[key]
+                    if number is not None and (type(number) is not int or number < 0):
+                        raise SystemExit("schema/privacy HOLD: invalid pointer scalar")
+                for key in ("physical_target_present", "matches_previous_down_physical_target"):
+                    boolean = pointer[key]
+                    if boolean is not None and type(boolean) is not bool:
+                        raise SystemExit("schema/privacy HOLD: invalid pointer boolean")
+                if pointer["displayed_hit_generation"] is not None:
+                    pointer_physical_observations += 1
+                    local_physical += 1
+                if pointer["activation_trace"] == "collected":
+                    pointer_activations_collected += 1
+                    local_activations += 1
+                if pointer["matches_previous_down_physical_target"] is False:
+                    pointer_previous_down_mismatches += 1
+                if pointer["status"].startswith("unavailable"):
+                    pointer_missing_trace += 1
+                if pointer["displayed_snapshot"] == "retained_historical":
+                    pointer_retained_snapshots += 1
                 if receipt["finality"] == "committed":
                     committed_receipts += 1
+                elif receipt["finality"] == "processing_rejected":
+                    pointer_rejected_input += 1
+                    local_rejected += 1
+                    if pointer["activation_trace"] == "collected":
+                        raise SystemExit("causality HOLD: rejected M13 input claims activation")
+                if pointer["activation_trace"] == "collected" and pointer["phase"] != "up":
+                    raise SystemExit("causality HOLD: activation without original pointer Up")
             if event["domain"] == "runenui_m13" and event["stage"] == "canonical_input_pump":
                 all_m13 += 1
                 if m13["processed_envelopes"] > 0:
@@ -124,6 +193,9 @@ for path in outputs:
             if e["domain"] == "runenui_m13" and e["stage"] == "canonical_input_pump"
         ),
         "cpu_evictions": data["dropped_cpu_events"],
+        "pointer_physical_observations": local_physical,
+        "source_pointer_activations": local_activations,
+        "m13_processing_rejected": local_rejected,
         "render_observations": len(data["render"]["observations"]),
     })
 
@@ -136,7 +208,8 @@ completed = all(s["status"] == "completed" for s in sessions)
 qualified = (
     (interaction_only or resize_status == "0") and interaction_status == "0" and completed
     and all_m13 > 0 and productive_m13_pumps > 0
-    and committed_receipts > 0 and all_render > 0
+    and committed_receipts > 0 and pointer_physical_observations > 0
+    and pointer_activations_collected > 0 and all_render > 0
     and any(e["cpu_events"] > 0 for e in sessions)
     and (interaction_only or any(
         e["capture"] == "resize.json" and e["status"] == "completed"
@@ -159,6 +232,12 @@ summary = {
     "productive_m13_pumps": productive_m13_pumps,
     "resize_capture_present": (root / "resize.json").is_file(),
     "committed_m13_receipts_sampled": committed_receipts,
+    "source_pointer_physical_observations": pointer_physical_observations,
+    "source_pointer_activations_collected": pointer_activations_collected,
+    "source_pointer_previous_down_mismatches": pointer_previous_down_mismatches,
+    "source_pointer_unavailable": pointer_missing_trace,
+    "source_pointer_retained_historical_snapshots": pointer_retained_snapshots,
+    "m13_processing_rejected_receipts": pointer_rejected_input,
     "render_observations": all_render,
     "captures": sessions,
     "unproven": [
