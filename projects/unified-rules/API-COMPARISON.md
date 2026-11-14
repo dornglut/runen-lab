@@ -277,6 +277,26 @@ Engine reconstruction, claim/lease authority or external exactly-once
 proof. Nor is cancellation guaranteed to stop physical execution just
 because a cancel command was staged. Rules remain impure and serial.
 
+**Critical red/green regression proof:** At red exact head
+`c22c131008cdf9171821d2b312d3e2792a1a8d63`, three independently
+added tests failed: retry after a rejected cancel generated no new work;
+accepted cancellation leaked its Start request; successful Start completion
+left an obsolete Cancel request. The corrected consumer adds explicit
+`CancelRequested { revision, attempt }` and
+`CommandKind::Cancel { attempt }` identity, admitting a changed fact for
+each real retry. After an accepted *terminal* outcome the fake executor
+retires all in-memory Start/Cancel requests for that precise generational
+operation ticket; `CancelRejected` retires only its own request. Previous
+tests that expected late sibling reports to return AlreadyTerminal now
+correctly expect NotPending after retirement.
+
+**Still unproven:** An accepted cancellation report in this serial simulation
+is not evidence that a real external worker stopped, and retirement is not
+resource cleanup or a durable/cross-process acknowledgment. Physical work,
+concurrent claim fencing, authenticated terminal reports and state+outbox
+atomicity require separately owned guarantees; a caller can still manually
+write terminal `Execution` input and bypass the fake executor.
+
 **Disposition:** Bounded typed lifecycle admission and race model may be
 a useful semantic primitive, but do **not** adopt it as a final engine API.
 The frontend still requires manually authored command orchestration and

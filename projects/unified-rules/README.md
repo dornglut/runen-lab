@@ -245,6 +245,21 @@ reports and unrelated input invalidation, and rollback when terminal
 admission fails. `CancelRequested` is not terminal cancellation, and
 a failed terminal-state transaction must leave the request pending.
 
+**Cancellation regression correction:** Three new tests were first run
+against the earlier consumer and failed, establishing that a rejected cancel
+could not issue a new request, an accepted Cancelled report left Start pending,
+and an accepted Start completion left Cancel pending. The test-local consumer
+now numbers successive cancellation attempts and retires all outstanding
+in-memory requests with the **exact (generational Key, revision)** ticket
+after a successful terminal state admission. `CancelRejected` retires only
+its attempt; the original Start remains pending until terminal. A subsequent
+stale sibling report is no longer considered in flight.
+
+**This is not external cancellation:** in-memory retirement does not revoke
+a worker's actual I/O; only a trustworthy terminal report can justify treating
+the work as stopped. State admission and outbox acknowledgment still occur
+as separate operations. The simulated executor is not a production authority.
+
 **Not proven:** The executor is test-local glue with no real I/O.
 Terminal input admission and `acknowledge_effect` remain separate calls
 with a visible crash gap, and there are no durable operation IDs, real
