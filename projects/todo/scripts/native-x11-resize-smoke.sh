@@ -36,7 +36,11 @@ wm_pid=$!
 sleep 1
 kill -0 "$wm_pid" 2>/dev/null || fail window-manager-startup
 
-"$binary" >"$scratch/todo.log" 2>&1 &
+if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" ]]; then
+  RUNENWERK_PROFILE_OUTPUT="${RUNEN_LAB_TODO_PROFILE_ROOT}/resize.json" "$binary" >"$scratch/todo.log" 2>&1 &
+else
+  "$binary" >"$scratch/todo.log" 2>&1 &
+fi
 app_pid=$!
 window=""
 for _ in $(seq 1 80); do

@@ -75,7 +75,11 @@ PY
 
 start_todo() {
   run=$((run + 1))
-  "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" ]]; then
+    RUNENWERK_PROFILE_OUTPUT="${RUNEN_LAB_TODO_PROFILE_ROOT}/todo-${run}.json" "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  else
+    "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  fi
   todo_pid=$!
   window=""
   for _ in $(seq 1 100); do
