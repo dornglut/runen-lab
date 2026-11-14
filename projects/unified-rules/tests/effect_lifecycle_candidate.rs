@@ -216,10 +216,9 @@ fn cancel(engine: &mut Engine, key: Key, revision: u64) -> Result<Decision, Erro
     // After CancelRejected the prior attempt remains recorded. A retry must
     // advance its identity, not merely restore the CancelRequested phase.
     let attempt = match engine.get::<CancelRequested>(key) {
-        Some(previous) if previous.revision == revision => previous
-            .attempt
-            .checked_add(1)
-            .ok_or(Error::Overflow)?,
+        Some(previous) if previous.revision == revision => {
+            previous.attempt.checked_add(1).ok_or(Error::Overflow)?
+        }
         _ => 1,
     };
     engine.transact(|tx| {
@@ -375,9 +374,11 @@ impl FakeExecutor {
             (CommandKind::Cancel { .. }, TerminalReport::Cancelled, Phase::CancelRequested) => {
                 Phase::Cancelled
             }
-            (CommandKind::Cancel { .. }, TerminalReport::CancelRejected, Phase::CancelRequested) => {
-                Phase::Submitted
-            }
+            (
+                CommandKind::Cancel { .. },
+                TerminalReport::CancelRejected,
+                Phase::CancelRequested,
+            ) => Phase::Submitted,
             _ => return Ok(Decision::Rejected),
         };
         // The terminal result is admitted as an ordinary typed input fact.
