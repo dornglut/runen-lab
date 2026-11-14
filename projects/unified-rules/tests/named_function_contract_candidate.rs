@@ -32,11 +32,7 @@ trait EmitTo {
     fn emit_to<E: Clone + Eq + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error>;
 }
 impl EmitTo for Transaction<'_> {
-    fn emit_to<E: Clone + Eq + 'static>(
-        &mut self,
-        entity: Key,
-        value: E,
-    ) -> Result<(), Error> {
+    fn emit_to<E: Clone + Eq + 'static>(&mut self, entity: Key, value: E) -> Result<(), Error> {
         self.emit(Targeted { entity, value })
     }
 }
@@ -96,7 +92,6 @@ where
     }
 }
 
-
 impl<F, A, B, O> Install<Fallible2<A, B, O>> for F
 where
     A: Clone + Eq + 'static,
@@ -124,9 +119,7 @@ where
     F: Fn(&A) -> Option<O> + 'static,
 {
     fn install(self, app: &mut Engine) -> Result<(), Error> {
-        app.compute::<Each<O>>(move |cx, key| {
-            Ok(cx.get::<A>(key)?.and_then(|value| self(&value)))
-        })
+        app.compute::<Each<O>>(move |cx, key| Ok(cx.get::<A>(key)?.and_then(|value| self(&value))))
     }
 }
 
@@ -138,9 +131,7 @@ where
 {
     fn install(self, app: &mut Engine) -> Result<(), Error> {
         app.compute::<On<Targeted<E>>>(move |cx, occurrence| {
-            cx.try_update::<T>(occurrence.entity, |source| {
-                self(&occurrence.value, source)
-            })?;
+            cx.try_update::<T>(occurrence.entity, |source| self(&occurrence.value, source))?;
             Ok(None)
         })
     }
@@ -425,8 +416,8 @@ fn loot_count(cx: &mut RuleCx<'_, '_>) -> Result<Option<LootCount>, Error> {
 }
 
 #[test]
-fn function_first_game_composes_targeted_mutation_derivation_temporal_hierarchy_and_feedback(
-) -> Result<(), Error> {
+fn function_first_game_composes_targeted_mutation_derivation_temporal_hierarchy_and_feedback()
+-> Result<(), Error> {
     let mut app = Engine::new();
     app.clock_in::<One<Step>>((), |step| step.epoch)?;
 
@@ -517,7 +508,9 @@ fn pay(payment: &Payment, paid: &mut Paid) -> Result<(), Error> {
 }
 
 fn outstanding(amount: &Amount, paid: &Paid) -> Result<Outstanding, Error> {
-    Ok(Outstanding(amount.0.checked_sub(paid.0).ok_or(Error::Overflow)?))
+    Ok(Outstanding(
+        amount.0.checked_sub(paid.0).ok_or(Error::Overflow)?,
+    ))
 }
 
 fn outstanding_total(cx: &mut RuleCx<'_, '_>) -> Result<Option<OutstandingTotal>, Error> {
@@ -535,8 +528,8 @@ fn nonempty(document: &Document) -> Option<Nonempty> {
 }
 
 #[test]
-fn same_function_contract_supports_fallible_invoice_updates_optional_retractions_and_rollback(
-) -> Result<(), Error> {
+fn same_function_contract_supports_fallible_invoice_updates_optional_retractions_and_rollback()
+-> Result<(), Error> {
     let mut app = Engine::new();
     app.register(line_amount)?;
     app.register(outstanding)?;
@@ -555,7 +548,10 @@ fn same_function_contract_supports_fallible_invoice_updates_optional_retractions
     assert_eq!(app.get::<Amount>(row), Some(Amount(36)));
     assert_eq!(app.get::<Outstanding>(row), Some(Outstanding(36)));
     assert_eq!(app.get::<Nonempty>(row), Some(Nonempty));
-    assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(36)));
+    assert_eq!(
+        app.singleton::<OutstandingTotal>(),
+        Some(OutstandingTotal(36))
+    );
 
     app.transact(|tx| {
         tx.emit_to(row, Payment(10))?;
@@ -563,7 +559,10 @@ fn same_function_contract_supports_fallible_invoice_updates_optional_retractions
     })?;
     assert_eq!(app.get::<Paid>(row), Some(Paid(15)));
     assert_eq!(app.get::<Outstanding>(row), Some(Outstanding(21)));
-    assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(21)));
+    assert_eq!(
+        app.singleton::<OutstandingTotal>(),
+        Some(OutstandingTotal(21))
+    );
 
     assert_eq!(
         app.transact(|tx| tx.emit_to(row, Payment(i64::MAX))),
@@ -578,7 +577,10 @@ fn same_function_contract_supports_fallible_invoice_updates_optional_retractions
     app.transact(|tx| tx.remove::<Quantity>(row))?;
     assert_eq!(app.get::<Amount>(row), None);
     assert_eq!(app.get::<Outstanding>(row), None);
-    assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(0)));
+    assert_eq!(
+        app.singleton::<OutstandingTotal>(),
+        Some(OutstandingTotal(0))
+    );
     assert_eq!(
         app.changes::<Outstanding>(),
         vec![OutputChange::Removed(row)]
