@@ -1,0 +1,173 @@
+name: Todo experimental first-party profiler integration
+
+on:
+  pull_request:
+    branches:
+      - feat/7-todo-desktop-trial
+    paths:
+      - .github/workflows/todo-profiler-integration.yml
+      - projects/todo/scripts/native-x11-smoke.sh
+      - projects/todo/scripts/native-x11-resize-smoke.sh
+      - tools/todo-profiler-qualification.py
+
+permissions:
+  contents: read
+
+jobs:
+  todo-profiler:
+    name: Isolated Todo/Runenwerk profiling candidate (not acceptance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TODO_PROFILER_ENGINE_REV: "55d38b096da50b5608275c398c1c7c9182b4ba5b"
+      RUNENWERK_SOURCE_REVISION: "55d38b096da50b5608275c398c1c7c9182b4ba5b"
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Check out exact provisional Todo revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          echo "TODO_SOURCE_REVISION=$EXPECTED" >> "$GITHUB_ENV"
+
+      - name: Install Rust and native X11 software-Vulkan tools
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools xvfb xauth xdotool openbox libxkbcommon-x11-0 fonts-cantarell
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name "lvp_icd*.json" -print -quit)"
+          test -n "$icd"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "WGPU_BACKEND=vulkan" >> "$GITHUB_ENV"
+          echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/todo-profiler-xdg" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/todo-profiler-xdg"
+          chmod 700 "$RUNNER_TEMP/todo-profiler-xdg"
+          vulkaninfo --summary
+
+      - name: Apply disposable exact-commit Engine dependency overlay
+        run: |
+          set -euo pipefail
+          mkdir -p profiler-evidence
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path("projects/todo/Cargo.toml")
+          text = path.read_text()
+          old = "b4683b99939464c3bc79e85f04c752687f01bc86"
+          new = os.environ["TODO_PROFILER_ENGINE_REV"]
+          if text.count(old) != 1 or text.count(new) != 0:
+              raise SystemExit("Todo manifest no longer matches frozen origin")
+          path.write_text(text.replace(old, new))
+          PY
+          cargo +stable update --manifest-path projects/todo/Cargo.toml --package engine
+          cargo +stable metadata --manifest-path projects/todo/Cargo.toml --locked --format-version 1 > "$RUNNER_TEMP/todo-profile-metadata.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("todo-profile-metadata.json").read_text())
+          engine = [p for p in data["packages"] if p["name"] == "engine"]
+          expected = os.environ["TODO_PROFILER_ENGINE_REV"]
+          if len(engine) != 1 or expected not in (engine[0]["source"] or ""):
+              raise SystemExit("disposable Cargo graph did not resolve exact profiled Engine source")
+          print("todo_profiler_dependency=exact_candidate_verified")
+          PY
+          git diff -- projects/todo/Cargo.toml projects/todo/Cargo.lock > profiler-evidence/disposable-cargo-resolution.patch
+          test -s profiler-evidence/disposable-cargo-resolution.patch
+          printf '%s\n' "$TODO_PROFILER_ENGINE_REV" > profiler-evidence/engine-revision.txt
+
+      - name: Compile unchanged actual Todo Release application and native target fixture
+        run: |
+          set -euo pipefail
+          cargo +stable build --manifest-path projects/todo/Cargo.toml --release --locked
+          cargo +stable test --manifest-path projects/todo/Cargo.toml --locked native_smoke_click_targets -- --nocapture > "$RUNNER_TEMP/todo-profiler-targets.log" 2>&1 || { cat "$RUNNER_TEMP/todo-profiler-targets.log"; exit 1; }
+          grep -oE 'TODO_NATIVE_TARGET (field|add|toggle|remove|reopen|remove-reopened|page-next|page-first|page-previous|page-last) [0-9]+ [0-9]+' "$RUNNER_TEMP/todo-profiler-targets.log" > "$RUNNER_TEMP/todo-profiler-targets.txt"
+          test "$(wc -l < "$RUNNER_TEMP/todo-profiler-targets.txt")" -eq 10
+          echo "TODO_NATIVE_TARGETS_FILE=$RUNNER_TEMP/todo-profiler-targets.txt" >> "$GITHUB_ENV"
+          echo "RUNEN_LAB_TODO_PROFILE_ROOT=$GITHUB_WORKSPACE/profiler-evidence" >> "$GITHUB_ENV"
+          sha256sum projects/todo/target/release/todo > profiler-evidence/release-binary.sha256
+
+      - name: Exercise original physical-X11 resize on normal Todo binary
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 90s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" bash projects/todo/scripts/native-x11-resize-smoke.sh
+          status=$?
+          set -e
+          printf '%s\n' "$status" > profiler-evidence/resize-exit.txt
+
+      - name: Exercise original XTEST keyboard, focus, task and persistence journey
+        env:
+          RUNEN_LAB_TODO_DIAGNOSTICS: "1"
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 190s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" bash projects/todo/scripts/native-x11-smoke.sh
+          status=$?
+          set -e
+          printf '%s\n' "$status" > profiler-evidence/interaction-exit.txt
+
+      - name: Diagnostic only — compare the same native binary after three-second post-Reopen settlement
+        env:
+          RUNEN_LAB_TODO_DIAGNOSTICS: "1"
+          RUNEN_LAB_TODO_POST_REOPEN_DELAY: "3"
+        run: |
+          set -euo pipefail
+          mkdir -p profiler-evidence/delayed
+          set +e
+          RUNEN_LAB_TODO_PROFILE_ROOT="$PWD/profiler-evidence/delayed" \
+            timeout 190s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+              bash projects/todo/scripts/native-x11-smoke.sh
+          status=$?
+          set -e
+          printf '%s\n' "$status" > profiler-evidence/delayed/interaction-exit.txt
+
+      - name: Privacy-screen original and delayed source-owned captures independently
+        run: |
+          set -euo pipefail
+          python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence" "$TODO_PROFILER_ENGINE_REV"
+          python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence/delayed" "$TODO_PROFILER_ENGINE_REV" --interaction-only
+          (
+            cd profiler-evidence
+            sha256sum -- *.json *.txt > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          (
+            cd profiler-evidence/delayed
+            sha256sum -- *.json *.txt > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+
+      - name: Upload privacy-screened provisional profiler evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: runen-lab-todo-first-party-profiler-experiment
+          path: profiler-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require actual original native input and complete application journey
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("profiler-evidence/validation.json").read_text())
+          delayed = json.loads(Path("profiler-evidence/delayed/validation.json").read_text())
+          print(f"todo_profiler_baseline={result['classification']} delayed={delayed['classification']}")
+          if result["classification"] != "pass":
+              raise SystemExit("HOLD: original native Todo workflow did not qualify; delayed result is diagnostic only")
+          if delayed["classification"] != "pass":
+              raise SystemExit("HOLD: delayed diagnostic did not pass; do not infer a resolved cause")
+          print("todo_profiler_independent_application=pass")
+          PY
