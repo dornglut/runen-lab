@@ -22,6 +22,41 @@ This is a temporary accepted-API consumer baseline, **not** the future fluent Ap
 Native display/input/resize/shutdown still require physical platform qualification; compilation
 and unit tests alone do **not** establish that the GUI works.
 
+## Native UI idle-pacing experiment (#17)
+
+The default application launch deliberately inherits Runenwerk's accepted
+`ContinuousCapped(60)` host policy. On this **experimental branch only**, set
+`RUNEN_LAB_TODO_FRAME_PACING=on_demand` before launching to select the existing
+Runenwerk `FramePacingPolicyResource::on_demand()` API. An explicit
+`continuous_capped_60` value preserves the normal default; unsupported values
+fail before native startup. No RenderFlow, RunenUI or engine timing semantics are
+modified, and the experiment does not establish a production default.
+
+On Windows PowerShell, build Release once and then compare isolated, fixed-content
+sessions under identical window and display settings:
+
+```powershell
+cargo +stable build --manifest-path projects/todo/Cargo.toml --release --locked
+$env:RUNEN_LAB_TODO_DATA_FILE = "$env:TEMP\\runen-lab-todo-perf.json"
+$env:RUNEN_LAB_TODO_FRAME_PACING = "continuous_capped_60"
+cargo +stable run --manifest-path projects/todo/Cargo.toml --release --locked
+# Close normally. Repeat with on_demand, using the same data and window setup:
+$env:RUNEN_LAB_TODO_FRAME_PACING = "on_demand"
+cargo +stable run --manifest-path projects/todo/Cargo.toml --release --locked
+Remove-Item Env:RUNEN_LAB_TODO_FRAME_PACING
+Remove-Item Env:RUNEN_LAB_TODO_DATA_FILE
+```
+
+Observe actual OS process CPU usage and memory after startup stabilization, not
+just GPU Render stage durations. For both policies verify Add (button and Enter),
+Complete/Reopen/Remove, paging, wheel scroll, window resize, focus/wake, and
+normal close/restart/persistence. Use repeated, balanced Release trials, report
+CPU sampling configuration and actual device/window/display metadata, and
+treat screen FPS, latency and GPU scanout as unknown unless independently measured.
+OnDemand may have a correctness defect or a workload-dependent trade-off; don't
+ship it as the default on the basis of lower idle CPU alone. Physical Windows
+results are required; CI does not substitute for them.
+
 ## Task interactions
 
 Enter a task title and press **Enter** or select **Add task**. The title is a
