@@ -4,8 +4,8 @@
 //! experimental C evaluator, promise generalized transactions, or duplicate
 //! ECS entity/storage/scheduler authority.
 
-use runen_ecs::prelude::*;
 use runen_ecs::EntityError;
+use runen_ecs::prelude::*;
 
 #[derive(ScheduleLabel)]
 struct Derive;
@@ -23,10 +23,7 @@ struct ProjectedX(f32);
 #[derive(Resource)]
 struct FixedDt(f32);
 
-fn derive_projected_x(
-    mut rows: Query<(&Position, &Velocity, &mut ProjectedX)>,
-    dt: Res<FixedDt>,
-) {
+fn derive_projected_x(mut rows: Query<(&Position, &Velocity, &mut ProjectedX)>, dt: Res<FixedDt>) {
     for (position, velocity, projected) in rows.iter() {
         projected.0 = position.0 + velocity.0 * dt.0;
     }
