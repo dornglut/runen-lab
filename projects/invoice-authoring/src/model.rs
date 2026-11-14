@@ -25,13 +25,46 @@ pub struct Source {
 pub fn initial() -> Source {
     Source {
         invoices: BTreeMap::from([
-            (1, Invoice { due: 11, paid: false }),
-            (2, Invoice { due: 14, paid: false }),
+            (
+                1,
+                Invoice {
+                    due: 11,
+                    paid: false,
+                },
+            ),
+            (
+                2,
+                Invoice {
+                    due: 14,
+                    paid: false,
+                },
+            ),
         ]),
         lines: BTreeMap::from([
-            (11, Line { invoice_id: 1, price: 10, quantity: 2 }),
-            (12, Line { invoice_id: 1, price: 4, quantity: 3 }),
-            (13, Line { invoice_id: 2, price: 6, quantity: 5 }),
+            (
+                11,
+                Line {
+                    invoice_id: 1,
+                    price: 10,
+                    quantity: 2,
+                },
+            ),
+            (
+                12,
+                Line {
+                    invoice_id: 1,
+                    price: 4,
+                    quantity: 3,
+                },
+            ),
+            (
+                13,
+                Line {
+                    invoice_id: 2,
+                    price: 6,
+                    quantity: 5,
+                },
+            ),
         ]),
         day: 10,
     }
@@ -117,8 +150,13 @@ pub fn project(source: &Source) -> Result<Projection, Rejection> {
         totals.insert(invoice_id, 0);
     }
     for line in source.lines.values() {
-        let total = totals.get_mut(&line.invoice_id).ok_or(Rejection::MissingInvoice)?;
-        let amount = line.price.checked_mul(line.quantity).ok_or(Rejection::Overflow)?;
+        let total = totals
+            .get_mut(&line.invoice_id)
+            .ok_or(Rejection::MissingInvoice)?;
+        let amount = line
+            .price
+            .checked_mul(line.quantity)
+            .ok_or(Rejection::Overflow)?;
         *total = total.checked_add(amount).ok_or(Rejection::Overflow)?;
     }
     let mut open_balance = 0_i64;
@@ -147,13 +185,22 @@ pub fn preflight(previous: &Source, edit: &Edit) -> Result<Source, Rejection> {
     let mut next = previous.clone();
     match *edit {
         Edit::Quantity { line, value } => {
-            next.lines.get_mut(&line).ok_or(Rejection::MissingLine)?.quantity = value;
+            next.lines
+                .get_mut(&line)
+                .ok_or(Rejection::MissingLine)?
+                .quantity = value;
         }
         Edit::Price { line, value } => {
-            next.lines.get_mut(&line).ok_or(Rejection::MissingLine)?.price = value;
+            next.lines
+                .get_mut(&line)
+                .ok_or(Rejection::MissingLine)?
+                .price = value;
         }
         Edit::Reassign { line, invoice } => {
-            next.lines.get_mut(&line).ok_or(Rejection::MissingLine)?.invoice_id = invoice;
+            next.lines
+                .get_mut(&line)
+                .ok_or(Rejection::MissingLine)?
+                .invoice_id = invoice;
         }
         Edit::Day { value } => {
             if value < previous.day {
@@ -162,7 +209,10 @@ pub fn preflight(previous: &Source, edit: &Edit) -> Result<Source, Rejection> {
             next.day = value;
         }
         Edit::Paid { invoice, value } => {
-            next.invoices.get_mut(&invoice).ok_or(Rejection::MissingInvoice)?.paid = value;
+            next.invoices
+                .get_mut(&invoice)
+                .ok_or(Rejection::MissingInvoice)?
+                .paid = value;
         }
         Edit::Delete { line } => {
             if next.lines.remove(&line).is_none() {
