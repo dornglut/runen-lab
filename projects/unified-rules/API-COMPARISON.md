@@ -320,15 +320,16 @@ per-invoice + global reference model**. No SUMMARY or CLOCK entity is created.
 | Global open balance | Fallback to artificial key/raw rule | Fallback to artificial key/raw rule | True keyless `One<OpenBalance>` |
 | Monotonic keyless time | Unsupported in own frontend | Older keyed clock fallback | Scoped clock admission |
 | Once-on-transition reminder + effect request | Unsupported | Old raw callback, no effect lifecycle | In-memory `emit` / `request` in same rule |
-| Full independent game consumer in this frontend | **Not proven** | **Not proven** | **Not proven** (game consumer uses `rule`) |
+| Full independent game consumer in this frontend | **Not proven** | **Not proven** | A separate scoped consumer now exists; check its exact-head CI (J) |
 | Indexed/incremental joins, borrowing, parallelism | Not proven | Not proven | Not proven |
 
 **Critical distinction:** This is a *complete vertical invoice application
 scenario*, **not** a complete frontend comparison. The C test still relies
 on `RuleCx` for every domain, performs O(total lines × invoices) repeated
 collection scans on affected invoices, and carries explicit input and
-outbox management. The game workload still uses the older `rule::<T>`
-surface. The 66-line engine configuration span (lines 47–112) excludes
+outbox management. The original game consumer still uses the older `rule::<T>`
+surface; the separate J consumer applies scoped `compute` to the game
+workload. Neither A nor B yet supports this full comparison. The 66-line engine configuration span (lines 47–112) excludes
 types, fixtures, assertions and external effect execution; do not compare
 that number against Bevy source LOC or call it a productivity win.
 
@@ -353,8 +354,8 @@ updates, parent redirection, absence of retroactive movement and global sums.
 Negative cases cover cycles, orphaned links, stale generations, rejected time,
 failed-computation rollback and preservation of the preceding event snapshot.
 
-**This is a source candidate pending exact-head execution**, not yet a proven
-result. Even a green result establishes scoped frontend *expressiveness* for
+**This is an experimental source candidate; consult exact-head CI for
+its current qualification status**, not source inspection alone. Even a green result establishes scoped frontend *expressiveness* for
 two downstream workloads, not frontend simplicity, borrowed data, selective
 indexes, concurrent correctness, complete effects, or Bevy/RunenECS superiority.
 `Each<T>` currently delegates to the original `rule<T>` evaluator; no

@@ -286,9 +286,11 @@ including data types, test fixtures, two tests and independent reference
 calculations; the `invoice_engine` function and spacing before `seed` occupy
 66 lines (lines 47–112). These
 are **not** comparable figures for complete Bevy/RunenECS applications.
-The same user-visible API across the *full game consumer* is **not yet
-proven**: `tests/consumer.rs` still uses the older per-key `engine.rule`
-surface rather than `compute::<Each<T>>`. The A function-injection and B
+The original `tests/consumer.rs` remains a legacy-`rule` compatibility
+baseline. The separate `tests/scoped_game_consumer.rs` now exercises
+the game workloads through `compute::<Each<T> / One<T>>`; its exact-head
+test result must be verified independently. This tests cross-domain
+frontend expressiveness, not ergonomic superiority. The A function-injection and B
 relation candidates also have not acquired global/time/events/effects support
 through their **own** frontends. This is evidence for scoped-C expressiveness,
 **not** a successful head-to-head frontend comparison.
@@ -307,8 +309,8 @@ using `Each<T>` and `One<T>` together: keyless fixed-step admission, movement,
 parent/child propagation, contact and global occurrences, and a global aggregate.
 It contains adversarial rollback/identity cases and an independent 32-step
 movement/hierarchy/reduction reference. It does not replace the existing
-legacy-`rule` consumer or assert any new kernel capability. The candidate
-requires exact-head CI before its evidence can be treated as passed.
+legacy-`rule` consumer or assert any new kernel capability. Only exact-head CI can establish whether this source candidate passes;
+the source text alone is not qualification evidence.
 The user-facing callback still exposes `RuleCx`, while the internals retain
 whole-world cloning, serial recursion and whole-collection scans.
 

@@ -299,7 +299,7 @@ fn scoped_game_matches_independent_movement_hierarchy_and_reduction_oracle() -> 
         let dt = (round % 3) as i64 + 1;
         let epoch = round as u64 + 1;
         app.transact(|tx| tx.put_singleton(Step { epoch, dt }))?;
-        let mut world = vec![0_i64; COUNT];
+        let mut world = [0_i64; COUNT];
         for index in 0..COUNT {
             positions[index] += velocities[index] * dt;
             world[index] = locals[index] + parents[index].map_or(0, |p| world[p]);
