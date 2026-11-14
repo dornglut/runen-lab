@@ -136,8 +136,7 @@ fn scoped_game_combines_hierarchy_temporal_state_events_and_global_values() -> R
     let other = Key::new(3, 1);
 
     app.transact(|tx| {
-        for (key, seed, velocity, local) in
-            [(root, 10, 1, 5), (child, 20, 2, 2), (other, 30, 3, 9)]
+        for (key, seed, velocity, local) in [(root, 10, 1, 5), (child, 20, 2, 2), (other, 30, 3, 9)]
         {
             tx.spawn(key)?;
             tx.put(key, Seed(seed))?;
@@ -159,10 +158,20 @@ fn scoped_game_combines_hierarchy_temporal_state_events_and_global_values() -> R
     let pulses = app.occurrences::<Pulse>();
     assert_eq!(pulses.len(), 2);
     assert!(pulses.iter().any(|p| {
-        p.source == EventOrigin::Key(child) && p.value == Pulse { epoch: 1, global: false }
+        p.source == EventOrigin::Key(child)
+            && p.value
+                == Pulse {
+                    epoch: 1,
+                    global: false,
+                }
     }));
     assert!(pulses.iter().any(|p| {
-        p.source == EventOrigin::Global && p.value == Pulse { epoch: 1, global: true }
+        p.source == EventOrigin::Global
+            && p.value
+                == Pulse {
+                    epoch: 1,
+                    global: true,
+                }
     }));
 
     app.transact(|_| Ok(()))?;
