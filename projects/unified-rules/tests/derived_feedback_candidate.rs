@@ -82,7 +82,12 @@ fn derived_death_occurrence_spawns_loot_and_recomputes_aggregate_once() -> Resul
     assert_eq!(app.get::<Dead>(target), Some(Dead(false)));
     assert_eq!(app.singleton::<LootCount>(), Some(LootCount(0)));
 
-    app.transact(|tx| tx.emit(Hit { target, damage: 100 }))?;
+    app.transact(|tx| {
+        tx.emit(Hit {
+            target,
+            damage: 100,
+        })
+    })?;
     assert_eq!(app.get::<Health>(target), Some(Health(0)));
     assert_eq!(app.get::<Dead>(target), Some(Dead(true)));
     assert_eq!(app.get::<Loot>(loot), Some(Loot));
@@ -109,7 +114,8 @@ fn derived_death_occurrence_spawns_loot_and_recomputes_aggregate_once() -> Resul
 }
 
 #[test]
-fn derived_source_feedback_that_would_replay_an_event_is_rejected_atomically() -> Result<(), Error> {
+fn derived_source_feedback_that_would_replay_an_event_is_rejected_atomically() -> Result<(), Error>
+{
     let target = Key::new(2, 1);
     let mut app = Engine::new();
     app.compute::<On<Hit>>(hit)?;
@@ -126,7 +132,10 @@ fn derived_source_feedback_that_would_replay_an_event_is_rejected_atomically() -
     spawn_player(&mut app, target)?;
 
     assert_eq!(
-        app.transact(|tx| tx.emit(Hit { target, damage: 100 })),
+        app.transact(|tx| tx.emit(Hit {
+            target,
+            damage: 100
+        })),
         Err(Error::UnstableDerivedFeedback)
     );
     assert_eq!(app.get::<Health>(target), Some(Health(100)));
@@ -152,7 +161,10 @@ fn feedback_handler_failure_discards_derived_events_and_all_changes() -> Result<
     assert_eq!(app.singleton::<LootCount>(), Some(LootCount(1)));
 
     assert_eq!(
-        app.transact(|tx| tx.emit(Hit { target, damage: 100 })),
+        app.transact(|tx| tx.emit(Hit {
+            target,
+            damage: 100
+        })),
         Err(Error::InvalidGeneration)
     );
     assert_eq!(app.get::<Health>(target), Some(Health(100)));
@@ -174,7 +186,12 @@ fn derived_event_can_despawn_its_producer_while_preserving_removal_delta() -> Re
         Ok(None)
     })?;
     spawn_player(&mut app, target)?;
-    app.transact(|tx| tx.emit(Hit { target, damage: 100 }))?;
+    app.transact(|tx| {
+        tx.emit(Hit {
+            target,
+            damage: 100,
+        })
+    })?;
     assert_eq!(app.get::<Dead>(target), None);
     assert_eq!(app.get::<Health>(target), None);
     assert_eq!(app.changes::<Dead>(), vec![OutputChange::Removed(target)]);

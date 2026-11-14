@@ -573,9 +573,7 @@ fn invalidated_by(
 }
 
 /// Rebuild the currently observed inverse edges. Correctness-first, O(graph).
-fn reverse_for(
-    dependencies: &HashMap<Task, HashSet<Fact>>,
-) -> HashMap<Fact, BTreeSet<Task>> {
+fn reverse_for(dependencies: &HashMap<Task, HashSet<Fact>>) -> HashMap<Fact, BTreeSet<Task>> {
     let mut reverse: HashMap<Fact, BTreeSet<Task>> = HashMap::new();
     for (&task, reads) in dependencies {
         for &fact in reads {
