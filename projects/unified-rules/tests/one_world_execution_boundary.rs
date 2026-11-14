@@ -23,8 +23,8 @@ struct ProjectedX(f32);
 #[derive(Resource)]
 struct FixedDt(f32);
 
-fn derive_projected_x(mut rows: Query<(&Position, &Velocity, &mut ProjectedX)>, dt: Res<FixedDt>) {
-    for (position, velocity, projected) in rows.iter() {
+fn derive_projected_x(mut rows: Query<(&mut ProjectedX, &Position, &Velocity)>, dt: Res<FixedDt>) {
+    for (projected, position, velocity) in rows.iter() {
         projected.0 = position.0 + velocity.0 * dt.0;
     }
 }
