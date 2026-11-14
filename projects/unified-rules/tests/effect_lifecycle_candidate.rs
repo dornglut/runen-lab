@@ -696,7 +696,6 @@ fn obsolete_queued_requests_retire_before_dispatch_without_leaking_outbox() -> R
     Ok(())
 }
 
-
 #[test]
 fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Error> {
     let mut engine = app()?;
