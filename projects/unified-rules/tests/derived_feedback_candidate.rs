@@ -242,3 +242,64 @@ fn non_game_derived_invoice_transition_uses_same_feedback_mechanics() -> Result<
     assert_eq!(app.occurrences::<Reminder>().len(), 1);
     Ok(())
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Award(Key);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Bonus(i64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BonusTotal(i64);
+
+#[test]
+fn a_second_derived_event_advances_another_feedback_wave_without_replaying_the_first()
+-> Result<(), Error> {
+    let target = Key::new(7, 1);
+    let loot = Key::new(107, 1);
+    let mut app = Engine::new();
+    app.compute::<On<Hit>>(hit)?;
+    app.compute::<Each<Dead>>(death)?;
+    app.compute::<On<Died>>(|cx, died| {
+        cx.spawn(died.loot)?;
+        cx.put(died.loot, Loot)?;
+        Ok(None)
+    })?;
+    app.compute::<One<LootCount>>(|cx, ()| {
+        let count = LootCount(cx.all::<Loot>()?.len());
+        if count == LootCount(1)
+            && cx.previous_singleton::<LootCount>() != Some(LootCount(1))
+        {
+            cx.emit(Award(target))?;
+        }
+        Ok(Some(count))
+    })?;
+    app.compute::<On<Award>>(|cx, award| {
+        cx.put(award.0, Bonus(3))?;
+        Ok(None)
+    })?;
+    app.compute::<One<BonusTotal>>(|cx, ()| {
+        Ok(Some(BonusTotal(
+            cx.all::<Bonus>()?.into_iter().map(|(_, b)| b.0).sum(),
+        )))
+    })?;
+    spawn_player(&mut app, target)?;
+    assert_eq!(app.singleton::<LootCount>(), Some(LootCount(0)));
+    assert_eq!(app.singleton::<BonusTotal>(), Some(BonusTotal(0)));
+
+    app.transact(|tx| {
+        tx.emit(Hit {
+            target,
+            damage: 100,
+        })
+    })?;
+    assert_eq!(app.get::<Loot>(loot), Some(Loot));
+    assert_eq!(app.get::<Bonus>(target), Some(Bonus(3)));
+    assert_eq!(app.singleton::<LootCount>(), Some(LootCount(1)));
+    assert_eq!(app.singleton::<BonusTotal>(), Some(BonusTotal(3)));
+    assert_eq!(app.occurrences::<Died>().len(), 1);
+    assert_eq!(app.occurrences::<Award>().len(), 1);
+    assert_eq!(
+        app.singleton_change::<BonusTotal>(),
+        Some(SingletonChange::Updated(BonusTotal(3)))
+    );
+    Ok(())
+}
