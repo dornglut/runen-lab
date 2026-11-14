@@ -377,6 +377,15 @@ state_matches "complete" || fail "reopen-restart-lost-completed-state"
 xdotool mousemove --window "$window" "${target_x[reopen]}" "${target_y[reopen]}" click 1
 await_state "open" "reopen-button"
 echo "todo_native_x11=pass phase=native-reopen-persisted"
+# Deliberately test a separate timing hypothesis. This opt-in delay does
+# not change original pointer routing or turn a failing baseline into PASS.
+# The primary native XTEST control always runs without this variable.
+if [[ -n "${RUNEN_LAB_TODO_POST_REOPEN_DELAY:-}" ]]; then
+  echo "todo_native_x11=diagnostic post_reopen_delay_seconds=${RUNEN_LAB_TODO_POST_REOPEN_DELAY}"
+  sleep "$RUNEN_LAB_TODO_POST_REOPEN_DELAY"
+  assert_alive "post-reopen-delay"
+  state_matches "open" || fail "post-reopen-storage-changed"
+fi
 # Target coordinates are published from the *reopened* task state,
 # not assumed to match the initial or completed row layout.
 xdotool mousemove --window "$window" "${target_x[remove-reopened]}" "${target_y[remove-reopened]}" click 1

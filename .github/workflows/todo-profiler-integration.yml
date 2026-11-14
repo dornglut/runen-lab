@@ -117,12 +117,33 @@ jobs:
           set -e
           printf '%s\n' "$status" > profiler-evidence/interaction-exit.txt
 
-      - name: Privacy-screen source-owned captures and assess real M13 evidence
+      - name: Diagnostic only — compare the same native binary after three-second post-Reopen settlement
+        env:
+          RUNEN_LAB_TODO_DIAGNOSTICS: "1"
+          RUNEN_LAB_TODO_POST_REOPEN_DELAY: "3"
+        run: |
+          set -euo pipefail
+          mkdir -p profiler-evidence/delayed
+          set +e
+          RUNEN_LAB_TODO_PROFILE_ROOT="$PWD/profiler-evidence/delayed" \
+            timeout 190s xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+              bash projects/todo/scripts/native-x11-smoke.sh
+          status=$?
+          set -e
+          printf '%s\n' "$status" > profiler-evidence/delayed/interaction-exit.txt
+
+      - name: Privacy-screen original and delayed source-owned captures independently
         run: |
           set -euo pipefail
           python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence" "$TODO_PROFILER_ENGINE_REV"
+          python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence/delayed" "$TODO_PROFILER_ENGINE_REV" --interaction-only
           (
             cd profiler-evidence
+            sha256sum -- *.json *.txt > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          (
+            cd profiler-evidence/delayed
             sha256sum -- *.json *.txt > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
@@ -142,7 +163,11 @@ jobs:
           import json
           from pathlib import Path
           result = json.loads(Path("profiler-evidence/validation.json").read_text())
+          delayed = json.loads(Path("profiler-evidence/delayed/validation.json").read_text())
+          print(f"todo_profiler_baseline={result['classification']} delayed={delayed['classification']}")
           if result["classification"] != "pass":
-              raise SystemExit("HOLD: actual native Todo workflow did not qualify; inspect retained privacy-screened capture")
+              raise SystemExit("HOLD: original native Todo workflow did not qualify; delayed result is diagnostic only")
+          if delayed["classification"] != "pass":
+              raise SystemExit("HOLD: delayed diagnostic did not pass; do not infer a resolved cause")
           print("todo_profiler_independent_application=pass")
           PY

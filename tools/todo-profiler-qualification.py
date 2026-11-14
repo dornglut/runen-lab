@@ -8,6 +8,9 @@ import sys
 
 root = Path(sys.argv[1])
 expected = sys.argv[2]
+interaction_only = len(sys.argv) == 4 and sys.argv[3] == "--interaction-only"
+if len(sys.argv) not in (3, 4) or (len(sys.argv) == 4 and not interaction_only):
+    raise SystemExit("invalid qualification invocation")
 outputs = sorted(root.glob("todo-*.json")) + sorted(root.glob("resize.json"))
 if not re.fullmatch(r"[0-9a-f]{40}", expected):
     raise SystemExit("invalid pinned revision")
@@ -124,20 +127,27 @@ for path in outputs:
         "render_observations": len(data["render"]["observations"]),
     })
 
-resize_status = (root / "resize-exit.txt").read_text().strip()
+resize_status = (
+    "not_tested_in_this_trial" if interaction_only
+    else (root / "resize-exit.txt").read_text().strip()
+)
 interaction_status = (root / "interaction-exit.txt").read_text().strip()
 completed = all(s["status"] == "completed" for s in sessions)
 qualified = (
-    resize_status == "0" and interaction_status == "0" and completed
+    (interaction_only or resize_status == "0") and interaction_status == "0" and completed
     and all_m13 > 0 and productive_m13_pumps > 0
     and committed_receipts > 0 and all_render > 0
     and any(e["cpu_events"] > 0 for e in sessions)
-    and any(e["capture"] == "resize.json" and e["status"] == "completed"
-            and e["render_observations"] > 0 for e in sessions)
+    and (interaction_only or any(
+        e["capture"] == "resize.json" and e["status"] == "completed"
+        and e["render_observations"] > 0 for e in sessions
+    ))
 )
 summary = {
     "classification": "pass" if qualified else "hold",
     "kind": "runen_lab_independent_todo_native_profiler_candidate",
+    "experiment": "controlled_post_reopen_delay" if interaction_only else "unaltered_native_baseline",
+    "delay_seconds": 3 if interaction_only else 0,
     "runenwerk_revision": expected,
     "todo_revision": os.environ.get("TODO_SOURCE_REVISION", "unknown"),
     "environment": "ubuntu-24.04_xvfb_lavapipe_release",
