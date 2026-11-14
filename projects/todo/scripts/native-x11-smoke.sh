@@ -36,6 +36,30 @@ trap cleanup EXIT
 
 fail() {
   echo "todo_native_x11=fail stage=$1" >&2
+  # Only in the provisional profiler experiment: close the still-live
+  # failing application through the original WM path to preserve its real
+  # M13 evidence. Never change the failure outcome or replay its input.
+  if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" && -n "$todo_pid" && -n "$window" ]] &&
+     kill -0 "$todo_pid" 2>/dev/null; then
+    if timeout 2s xdotool windowfocus --sync "$window" >/dev/null 2>&1 &&
+       timeout 2s xdotool key --clearmodifiers Alt+F4 >/dev/null 2>&1; then
+      for _ in $(seq 1 80); do
+        if ! kill -0 "$todo_pid" 2>/dev/null; then
+          close_status=0
+          wait "$todo_pid" || close_status=$?
+          todo_pid=""
+          echo "todo_native_x11=diagnostic failed_session_wm_close_exit=$close_status" >&2
+          break
+        fi
+        sleep 0.1
+      done
+    fi
+    if [[ -s "${RUNEN_LAB_TODO_PROFILE_ROOT}/todo-${run}.json" ]]; then
+      echo "todo_native_x11=diagnostic failed_session_profile_captured=true" >&2
+    else
+      echo "todo_native_x11=diagnostic failed_session_profile_captured=false" >&2
+    fi
+  fi
   for log in "$scratch"/todo-*.log; do
     if [[ -f "$log" ]]; then
       echo "=== Todo process log: $(basename "$log") ===" >&2
@@ -75,7 +99,11 @@ PY
 
 start_todo() {
   run=$((run + 1))
-  "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" ]]; then
+    RUNENWERK_PROFILE_OUTPUT="${RUNEN_LAB_TODO_PROFILE_ROOT}/todo-${run}.json" "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  else
+    "$binary" >"$scratch/todo-$run.log" 2>&1 &
+  fi
   todo_pid=$!
   window=""
   for _ in $(seq 1 100); do
@@ -349,6 +377,15 @@ state_matches "complete" || fail "reopen-restart-lost-completed-state"
 xdotool mousemove --window "$window" "${target_x[reopen]}" "${target_y[reopen]}" click 1
 await_state "open" "reopen-button"
 echo "todo_native_x11=pass phase=native-reopen-persisted"
+# Deliberately test a separate timing hypothesis. This opt-in delay does
+# not change original pointer routing or turn a failing baseline into PASS.
+# The primary native XTEST control always runs without this variable.
+if [[ -n "${RUNEN_LAB_TODO_POST_REOPEN_DELAY:-}" ]]; then
+  echo "todo_native_x11=diagnostic post_reopen_delay_seconds=${RUNEN_LAB_TODO_POST_REOPEN_DELAY}"
+  sleep "$RUNEN_LAB_TODO_POST_REOPEN_DELAY"
+  assert_alive "post-reopen-delay"
+  state_matches "open" || fail "post-reopen-storage-changed"
+fi
 # Target coordinates are published from the *reopened* task state,
 # not assumed to match the initial or completed row layout.
 xdotool mousemove --window "$window" "${target_x[remove-reopened]}" "${target_y[remove-reopened]}" click 1
