@@ -82,14 +82,22 @@ impl Backend {
                 Target::Live => self.live,
                 Target::Stale => self.stale,
             };
-            self.app.world_mut().resource_mut::<Messages<Hit>>().write(Hit {
-                target,
-                damage: hit.damage,
-                tick: case.tick,
-            });
+            self.app
+                .world_mut()
+                .resource_mut::<Messages<Hit>>()
+                .write(Hit {
+                    target,
+                    damage: hit.damage,
+                    tick: case.tick,
+                });
         }
         self.app.update();
-        let health = self.app.world().get::<Health>(self.live).expect("live target").0;
+        let health = self
+            .app
+            .world()
+            .get::<Health>(self.live)
+            .expect("live target")
+            .0;
         let mut results = self.app.world_mut().resource_mut::<Results>();
         Snapshot {
             health,

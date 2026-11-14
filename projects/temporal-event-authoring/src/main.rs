@@ -22,7 +22,9 @@ fn qualify() -> usize {
         assert!(case.tick > previous_tick, "ticks must be strictly ordered");
         previous_tick = case.tick;
         bevy_messages.step(case).check(case, "Bevy messages");
-        bevy_observers.step(case).check(case, "Bevy triggered observers");
+        bevy_observers
+            .step(case)
+            .check(case, "Bevy triggered observers");
         runen.step(case).check(case, "RunenECS app-owned queue");
     }
     cases.len()

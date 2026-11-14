@@ -100,7 +100,12 @@ impl Backend {
                 ),
             )
             .expect("valid sequential publication schedule");
-        Self { world, runtime, live, stale }
+        Self {
+            world,
+            runtime,
+            live,
+            stale,
+        }
     }
 
     pub fn step(&mut self, case: &Case) -> Snapshot {
@@ -114,10 +119,10 @@ impl Backend {
                 .expect("incoming")
                 .0
                 .push(Hit {
-                target,
-                damage: hit.damage,
-                tick: case.tick,
-            });
+                    target,
+                    damage: hit.damage,
+                    tick: case.tick,
+                });
         }
         self.runtime
             .run_schedule::<LogicalTick>(&mut self.world)
