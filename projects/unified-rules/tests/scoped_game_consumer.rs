@@ -33,7 +33,7 @@ struct Pulse {
     global: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RejectFourthTick;
+struct RejectSentinelTick;
 
 fn scoped_game() -> Result<Engine, Error> {
     let mut app = Engine::new();
@@ -116,10 +116,10 @@ fn scoped_game() -> Result<Engine, Error> {
     })?;
 
     // Registered last so failure follows staged events and state calculations.
-    app.compute::<One<RejectFourthTick>>(|cx, ()| {
+    app.compute::<One<RejectSentinelTick>>(|cx, ()| {
         if cx
             .advanced_in::<One<Step>>(())?
-            .is_some_and(|step| step.epoch == 4)
+            .is_some_and(|step| step.epoch == u64::MAX)
         {
             return Err(Error::Overflow);
         }
@@ -231,7 +231,7 @@ fn scoped_game_combines_hierarchy_temporal_state_events_and_global_values() -> R
     assert_eq!(app.get::<Position>(child), Some(Position(40)));
     let prior_events = app.occurrences::<Pulse>();
     assert_eq!(
-        app.transact(|tx| tx.put_singleton(Step { epoch: 4, dt: 1 })),
+        app.transact(|tx| tx.put_singleton(Step { epoch: u64::MAX, dt: 1 })),
         Err(Error::Overflow)
     );
     assert_eq!(app.singleton::<Step>(), Some(Step { epoch: 3, dt: 1 }));
