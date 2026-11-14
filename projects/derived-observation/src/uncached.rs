@@ -141,9 +141,7 @@ mod runen {
             let materials: BTreeMap<_, _> = data
                 .materials
                 .iter()
-                .map(|(&id, &color)| {
-                    (id, world.spawn(MaterialColor(color)).expect("material"))
-                })
+                .map(|(&id, &color)| (id, world.spawn(MaterialColor(color)).expect("material")))
                 .collect();
             let objects = data
                 .objects
@@ -196,7 +194,9 @@ mod runen {
                                 .expect("relink");
                         }
                         if prior != next {
-                            self.world.insert(entity, Object(next)).expect("update object");
+                            self.world
+                                .insert(entity, Object(next))
+                                .expect("update object");
                         }
                     }
                     (None, None) => {}

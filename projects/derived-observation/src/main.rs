@@ -10,8 +10,8 @@ use contract::{
     Data, Expected, HeaderRow, Key, Packet, TraceCase, changed_packets, packet_digest, propose,
 };
 use runen_backend::RunenBackend;
-use uncached::{BevyReadOnly, RunenReadOnly};
 use std::collections::BTreeMap;
+use uncached::{BevyReadOnly, RunenReadOnly};
 
 /// Rebuilds the retained output after each admitted batch. This is a full-recompute control,
 /// not an incremental dependency engine. Repeated reads use the cached publication.
