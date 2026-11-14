@@ -795,6 +795,7 @@ fn comparable_game_contracts_have_identical_transaction_and_feedback_behavior() 
         register_game_a as fn(&mut Engine) -> Result<(), Error>,
         register_game_b,
         register_game_c,
+        register_game_d,
     ] {
         let mut app = Engine::new();
         create(&mut app)?;
@@ -858,6 +859,7 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
         register_invoice_a as fn(&mut Engine) -> Result<(), Error>,
         register_invoice_b,
         register_invoice_c,
+        register_invoice_d,
     ] {
         let mut app = Engine::new();
         create(&mut app)?;
@@ -983,4 +985,137 @@ fn register_game_c(app: &mut Engine) -> Result<(), Error> {
     app.register(death_transition)?;
     app.register(spawn_loot)?;
     app.register(loot_count)
+}
+
+// Alternative D: output-type authority is explicit once on each produced data
+// type (e.g. an eventual Component/Fact derive), instead of per-registration
+// type markers. Functions retain standard Rust T, Result<T>, Option<T> and ?.
+// This trait is a TEST-LOCAL opt-in; no accepted RunenECS component or public
+// C declaration/derive relationship has been established.
+trait MarkedOutput: Clone + Eq + 'static {}
+impl MarkedOutput for HealthPercent {}
+impl MarkedOutput for Dead {}
+impl MarkedOutput for Position {}
+impl MarkedOutput for WorldPosition {}
+impl MarkedOutput for DeathSeen {}
+impl MarkedOutput for LootCount {}
+impl MarkedOutput for Amount {}
+impl MarkedOutput for Outstanding {}
+impl MarkedOutput for Nonempty {}
+impl MarkedOutput for OutstandingTotal {}
+
+trait MarkedInstall<S> {
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error>;
+}
+impl<F, A, O> MarkedInstall<Required1<A, O>> for F
+where
+    A: Clone + Eq + 'static,
+    O: MarkedOutput,
+    F: Fn(&A) -> O + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Required1<A, O>>>::install(self, app)
+    }
+}
+impl<F, A, B, O> MarkedInstall<Required2<A, B, O>> for F
+where
+    A: Clone + Eq + 'static,
+    B: Clone + Eq + 'static,
+    O: MarkedOutput,
+    F: Fn(&A, &B) -> O + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Required2<A, B, O>>>::install(self, app)
+    }
+}
+impl<F, A, B, O> MarkedInstall<Fallible2<A, B, O>> for F
+where
+    A: Clone + Eq + 'static,
+    B: Clone + Eq + 'static,
+    O: MarkedOutput,
+    F: Fn(&A, &B) -> Result<O, Error> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Fallible2<A, B, O>>>::install(self, app)
+    }
+}
+impl<F, A, O> MarkedInstall<Optional1<A, O>> for F
+where
+    A: Clone + Eq + 'static,
+    O: MarkedOutput,
+    F: Fn(&A) -> Option<O> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Optional1<A, O>>>::install(self, app)
+    }
+}
+impl<F, O> MarkedInstall<Keyed<O>> for F
+where
+    O: MarkedOutput,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Keyed<O>>>::install(self, app)
+    }
+}
+impl<F, O> MarkedInstall<Keyless<O>> for F
+where
+    O: MarkedOutput,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<Keyless<O>>>::install(self, app)
+    }
+}
+impl<F, E, T> MarkedInstall<TargetMutation<E, T>> for F
+where
+    E: Clone + 'static,
+    T: Clone + Eq + 'static,
+    F: Fn(&E, &mut T) -> Result<(), Error> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<TargetMutation<E, T>>>::install(self, app)
+    }
+}
+impl<F, E> MarkedInstall<OccurrenceHandler<E>> for F
+where
+    E: Clone + 'static,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, E) -> Result<(), Error> + 'static,
+{
+    fn install_marked(self, app: &mut Engine) -> Result<(), Error> {
+        <F as Install<OccurrenceHandler<E>>>::install(self, app)
+    }
+}
+trait MarkedRegister {
+    fn register_marked<S, F>(&mut self, rule: F) -> Result<(), Error>
+    where
+        F: MarkedInstall<S>;
+}
+impl MarkedRegister for Engine {
+    fn register_marked<S, F>(&mut self, rule: F) -> Result<(), Error>
+    where
+        F: MarkedInstall<S>,
+    {
+        rule.install_marked(self)
+    }
+}
+fn register_invoice_d(app: &mut Engine) -> Result<(), Error> {
+    // No per-call signature markers; ordinary ? remains available in the
+    // unchanged original fn outstanding(...) -> Result<Outstanding, Error>.
+    app.register_marked(line_amount)?;
+    app.register_marked(outstanding)?;
+    app.register_marked(nonempty)?;
+    app.register_marked(pay)?;
+    app.register_marked(outstanding_total)
+}
+fn register_game_d(app: &mut Engine) -> Result<(), Error> {
+    app.clock_in::<One<Step>>((), |s| s.epoch)?;
+    app.register_marked(health_percent)?;
+    app.register_marked(is_dead)?;
+    app.register_marked(movement)?;
+    app.register_marked(world_position)?;
+    app.register_marked(damage)?;
+    app.register_marked(death_transition)?;
+    app.register_marked(spawn_loot)?;
+    app.register_marked(loot_count)
 }
