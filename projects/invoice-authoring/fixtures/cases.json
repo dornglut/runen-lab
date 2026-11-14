@@ -1,0 +1,231 @@
+[
+  {
+    "name": "increase_line_quantity",
+    "edit": {
+      "kind": "quantity",
+      "line": 11,
+      "value": 4
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 52,
+      "b_total": 30,
+      "open_balance": 82,
+      "a_overdue": false,
+      "b_overdue": false
+    },
+    "changes": [
+      "a_total",
+      "open_balance"
+    ]
+  },
+  {
+    "name": "move_line_to_other_invoice",
+    "edit": {
+      "kind": "reassign",
+      "line": 12,
+      "invoice": 2
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": false,
+      "b_overdue": false
+    },
+    "changes": [
+      "a_total",
+      "b_total"
+    ]
+  },
+  {
+    "name": "day_12",
+    "edit": {
+      "kind": "day",
+      "value": 12
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": true,
+      "b_overdue": false
+    },
+    "changes": [
+      "a_overdue"
+    ]
+  },
+  {
+    "name": "reject_multiplication_overflow",
+    "edit": {
+      "kind": "price",
+      "line": 11,
+      "value": "9223372036854775807"
+    },
+    "accepted": false,
+    "error": "overflow",
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": true,
+      "b_overdue": false
+    },
+    "changes": []
+  },
+  {
+    "name": "reject_unowned_invoice_relation",
+    "edit": {
+      "kind": "reassign",
+      "line": 13,
+      "invoice": 99
+    },
+    "accepted": false,
+    "error": "missing_invoice",
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": true,
+      "b_overdue": false
+    },
+    "changes": []
+  },
+  {
+    "name": "accepted_noop",
+    "edit": {
+      "kind": "noop"
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": true,
+      "b_overdue": false
+    },
+    "changes": []
+  },
+  {
+    "name": "day_15",
+    "edit": {
+      "kind": "day",
+      "value": 15
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 82,
+      "a_overdue": true,
+      "b_overdue": true
+    },
+    "changes": [
+      "b_overdue"
+    ]
+  },
+  {
+    "name": "mark_A_paid",
+    "edit": {
+      "kind": "paid",
+      "invoice": 1,
+      "value": true
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 42,
+      "open_balance": 42,
+      "a_overdue": false,
+      "b_overdue": true
+    },
+    "changes": [
+      "open_balance",
+      "a_overdue"
+    ]
+  },
+  {
+    "name": "delete_line_B",
+    "edit": {
+      "kind": "delete",
+      "line": 13
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 12,
+      "open_balance": 12,
+      "a_overdue": false,
+      "b_overdue": true
+    },
+    "changes": [
+      "b_total",
+      "open_balance"
+    ]
+  },
+  {
+    "name": "reject_time_regression",
+    "edit": {
+      "kind": "day",
+      "value": 14
+    },
+    "accepted": false,
+    "error": "day_regression",
+    "expected": {
+      "a_total": 40,
+      "b_total": 12,
+      "open_balance": 12,
+      "a_overdue": false,
+      "b_overdue": true
+    },
+    "changes": []
+  },
+  {
+    "name": "unchanged_line_quantity",
+    "edit": {
+      "kind": "quantity",
+      "line": 12,
+      "value": 3
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 12,
+      "open_balance": 12,
+      "a_overdue": false,
+      "b_overdue": true
+    },
+    "changes": []
+  },
+  {
+    "name": "mark_B_paid",
+    "edit": {
+      "kind": "paid",
+      "invoice": 2,
+      "value": true
+    },
+    "accepted": true,
+    "error": null,
+    "expected": {
+      "a_total": 40,
+      "b_total": 12,
+      "open_balance": 0,
+      "a_overdue": false,
+      "b_overdue": false
+    },
+    "changes": [
+      "open_balance",
+      "b_overdue"
+    ]
+  }
+]
