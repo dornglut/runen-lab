@@ -3,6 +3,7 @@
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -306,7 +307,87 @@ pub struct Transaction<'a> {
     changed: &'a mut HashSet<Fact>,
     outputs: &'a HashMap<(TypeId, ProducerScope), usize>,
 }
-impl Transaction<'_> {
+/// Research-only transaction-scoped edit guard. The value is a staged clone:
+/// changes are written into the proposed world on guard drop, never directly
+/// into the committed world. No rule-callback injection is provided by this.
+pub struct Edit<'tx, 'world, T: Clone + Eq + 'static> {
+    tx: &'tx mut Transaction<'world>,
+    key: Key,
+    value: T,
+}
+
+impl<T: Clone + Eq + 'static> Deref for Edit<'_, '_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T: Clone + Eq + 'static> DerefMut for Edit<'_, '_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+impl<T: Clone + Eq + 'static> Drop for Edit<'_, '_, T> {
+    fn drop(&mut self) {
+        // Validity and derived-output ownership are checked when acquired.
+        // The guard owns an exclusive borrow of the transaction until drop.
+        if self.tx.world.set(self.key, Some(self.value.clone())) {
+            self.tx.changed.insert(Fact::of::<T>(self.key));
+            self.tx.changed.insert(Fact::collection::<T>());
+        }
+    }
+}
+
+impl<'world> Transaction<'world> {
+    /// Read the staged source/derived value as a clone, including earlier edits.
+    pub fn get<T: Clone + Eq + 'static>(&self, key: Key) -> Option<T> {
+        self.world.get::<T>(key)
+    }
+
+    /// Research candidate: mutable guard over a staged source component.
+    ///
+    /// Missing component returns None. A dead/stale key and editing a
+    /// rule-owned output are errors. This does not expose &mut from RuleCx.
+    pub fn edit<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+    ) -> Result<Option<Edit<'_, 'world, T>>, Error> {
+        if !self.world.contains(key) {
+            return Err(Error::MissingEntity);
+        }
+        if self
+            .outputs
+            .contains_key(&(TypeId::of::<T>(), ProducerScope::Each))
+        {
+            return Err(Error::DerivedIsReadOnly);
+        }
+        let Some(value) = self.world.get::<T>(key) else {
+            return Ok(None);
+        };
+        Ok(Some(Edit {
+            tx: self,
+            key,
+            value,
+        }))
+    }
+
+    /// Research candidate: closure update with a bounded mutable borrow.
+    /// Returns false when the component is missing from a live entity.
+    pub fn update<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+        update: impl FnOnce(&mut T),
+    ) -> Result<bool, Error> {
+        let Some(mut edit) = self.edit::<T>(key)? else {
+            return Ok(false);
+        };
+        update(&mut edit);
+        Ok(true)
+    }
+
     pub fn spawn(&mut self, key: Key) -> Result<(), Error> {
         if self.world.live.contains_key(&key.slot) {
             return Err(Error::InvalidGeneration);
