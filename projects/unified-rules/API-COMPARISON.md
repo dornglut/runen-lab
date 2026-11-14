@@ -526,3 +526,80 @@ tradeoffs, not equivalent spellings.
 **Disposition:** complete PR #16, accepted-base→head assurance,
 framework adoption and the Engineering #146 decision remain **HOLD**.
 No production Runenwerk/RunenECS semantics are changed by these tests.
+
+## M — accepted RunenECS component and query boundary (RULE-04/RULE-07)
+
+**Downstream executable qualification, not an integration or framework
+change.** The independent [`runen_ecs_backend_candidate.rs`](tests/runen_ecs_backend_candidate.rs)
+uses a **git-revision-pinned accepted RunenECS**
+`5d6af86bfa7c58f1ad26ec73635590a72e89ef37` as a dev dependency,
+with an actual Cargo-generated committed lockfile. The source is read through
+accepted public `runen_ecs::prelude` APIs; no RunenECS source is copied,
+no Runenwerk/RunenECS public API is changed, and no backend adapter or
+second synced World is introduced.
+
+**Positive compile-executed evidence at temporary lock-generation
+revision `f8f4ee7ca2f1672389391b21721809e35fa67194`:**
+[project-specific exact-head CI](https://github.com/dornglut/runen-lab/actions/runs/43589584019)
+passed **94/94 Debug and 94/94 Release** tests, Rustfmt and strict Clippy.
+The final exact-head run must separately prove the restored strict
+`--locked` workflow, not rely on that temporary generation step.
+
+- RunenECS stores `Position { x: f32, y: f32 }` and `Velocity { x: f32,
+  y: f32 }` as valid derived-macro `Component` types with **neither
+  `Clone` nor `Eq`**, including NaN/infinity values. Ordinary
+  `Query<(&mut Position, &Velocity)>` mutates in place and
+  `query::<(Entity, &Position)>()` borrows without copies. A
+  non-`Clone` `Vec<u8>` component also remains accessible.
+- Ordinary fixed-step integration with `Res<DeltaTime>` and explicit
+  schedule ordering compiles via public `Runtime::add_systems`. A
+  `Changed<Position>` observation deliberately counts a mutably accessed
+  value as changed even when `dt=0` leaves its float unchanged. This is
+  conservative change observation, **not** a numeric-value comparison.
+- Despawn and subsequent spawn reject stale entity access; no proof
+  depends on a particular slot-reuse sequence or query iteration order.
+
+**Critical source contract mismatch:**
+- Accepted [RunenECS `Component`](https://github.com/dornglut/runen-ecs/blob/5d6af86bfa7c58f1ad26ec73635590a72e89ef37/crates/runen-ecs/src/component.rs)
+  requires only `'static`; its
+  [`#[derive(Component)]`](https://github.com/dornglut/runen-ecs/blob/5d6af86bfa7c58f1ad26ec73635590a72e89ef37/crates/runen-ecs-macros/src/lib.rs)
+  generates that marker directly. The Lab C `OutputShape::Value` and
+  stored derived-output APIs require `Clone + Eq + 'static`. Thus a
+  valid float-valued RunenECS component is *not* automatically a valid C
+  derived output. P4's test-only `MarkedOutput` role opt-in does not
+  solve this; equating it with `Component` would silently impose stronger
+  requirements on existing component types.
+- Accepted RunenECS `World::mutation_journal::MutationJournal` is
+  **`pub(crate)`**, and its implementation replays component/resource
+  **change-observation metadata**; it does **not** stage arbitrary
+  component value updates with C's all-or-nothing rollback.
+  `BatchCommands::apply` applies commands sequentially and can fail
+  mid-application. No public RunenECS API has been shown here to provide
+  atomic speculative value publication, rollback of arbitrary mutation,
+  or C's derived-event feedback contract.
+- RunenECS's borrowed-query and deterministic schedule semantics are
+  authoritative for its own World. The separate Lab C engine still owns
+  its **own** cloned World and `Key` identity. This test **does not
+  connect their entities, queries, source state or output commits**;
+  claiming “C already runs over RunenECS” would be false.
+
+**Architecture disposition: PIVOT FEASIBILITY UNDER INVESTIGATION, HOLD
+on adoption.** A legitimate C-over-RunenECS design must preserve a
+**single** RunenECS-owned entity/storage/liveness authority, define
+distinct *source vs derived* output roles and per-output change policy
+(including `f32::NAN`, removals and equality vs changed-by-access),
+provide safely validated staged publication/rollback, preserve observer
+and relation semantics, and avoid two independently mutating schedulers.
+There is no sound adapter, storage-journal or performance proof in
+this consumer. Any new reusable ECS mutation capability belongs to an
+independently authorized RunenECS issue, not to this Lab experiment.
+
+**Next necessary gate:** determine whether existing accepted RunenECS
+public capabilities can support the required C transaction contract,
+or precisely identify the smallest missing upstream transaction/source
+journal boundary. Compile-prove a **single authoritative World** and
+floating-point derived output without cloning the entire World; reject
+the architecture rather than adding a mirrored World or app-specific
+recompute/scheduler. Then run equivalent complete Bevy/RunenECS
+applications and sparse/dense Release benchmarks before GO/PIVOT/REJECT.
+

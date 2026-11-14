@@ -47,17 +47,6 @@ jobs:
       - name: Rust stable
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
 
-      # TEMPORARY evidence-only lock resolution, removed after the
-      # reproducible generated lockfile is committed.
-      - name: Capture Cargo-resolved candidate lock
-        run: |
-          set -euo pipefail
-          cargo generate-lockfile --manifest-path projects/unified-rules/Cargo.toml
-          echo "BEGIN_CARGO_LOCK_BASE64"
-          base64 -w0 projects/unified-rules/Cargo.lock
-          echo
-          echo "END_CARGO_LOCK_BASE64"
-
       - name: Locked manifest
         run: cargo metadata --manifest-path projects/unified-rules/Cargo.toml --locked --no-deps --format-version 1 > /dev/null
 
