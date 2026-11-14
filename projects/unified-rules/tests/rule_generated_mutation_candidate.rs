@@ -293,10 +293,9 @@ struct Charge {
     amount: i64,
 }
 fn charge(cx: &mut RuleCx<'_, '_>, c: Charge) -> Result<Option<()>, Error> {
-    let Money(before) = cx.get::<Money>(c.invoice)?.ok_or(Error::MissingComponent)?;
-    let after = before.checked_add(c.amount).ok_or(Error::Overflow)?;
-    cx.update::<Money>(c.invoice, |money| {
-        money.0 = after;
+    cx.try_update::<Money>(c.invoice, |money| {
+        money.0 = money.0.checked_add(c.amount).ok_or(Error::Overflow)?;
+        Ok(())
     })?;
     Ok(None)
 }
@@ -333,5 +332,73 @@ fn non_game_consumer_uses_the_same_registration_and_atomic_rule_generated_mutati
         Err(Error::Overflow)
     );
     assert_eq!(app.get::<Money>(invoice), Some(Money(15)));
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Step(u64);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Probe;
+
+#[test]
+fn invalid_external_clock_is_rejected_before_occurrence_callbacks() -> Result<(), Error> {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let mut app = Engine::new();
+    app.clock_in::<One<Step>>((), |step| step.0)?;
+    let calls = Rc::new(Cell::new(0usize));
+    let observed = Rc::clone(&calls);
+    app.compute::<On<Probe>>(move |_, _| {
+        observed.set(observed.get() + 1);
+        Ok(None)
+    })?;
+    app.transact(|tx| tx.put_singleton(Step(1)))?;
+    assert_eq!(
+        app.transact(|tx| {
+            tx.put_singleton(Step(0))?;
+            tx.emit(Probe)
+        }),
+        Err(Error::InvalidClock)
+    );
+    assert_eq!(calls.get(), 0);
+    assert!(app.occurrences::<Probe>().is_empty());
+    assert_eq!(app.singleton::<Step>(), Some(Step(1)));
+    Ok(())
+}
+
+#[test]
+fn handlers_cannot_rewrite_or_remove_registered_clock_sources() -> Result<(), Error> {
+    let key = Key::new(100, 1);
+    let mut app = Engine::new();
+    app.clock::<Step>(key, |step| step.0)?;
+    app.compute::<On<Probe>>(move |cx, _| {
+        cx.put(key, Step(2))?;
+        Ok(None)
+    })?;
+    app.transact(|tx| {
+        tx.spawn(key)?;
+        tx.put(key, Step(1))
+    })?;
+    assert_eq!(
+        app.transact(|tx| tx.emit(Probe)),
+        Err(Error::ClockMutationDuringAdmission)
+    );
+    assert_eq!(app.get::<Step>(key), Some(Step(1)));
+
+    let mut other = Engine::new();
+    other.clock::<Step>(key, |step| step.0)?;
+    other.compute::<On<Probe>>(move |cx, _| {
+        cx.despawn(key)?;
+        Ok(None)
+    })?;
+    other.transact(|tx| {
+        tx.spawn(key)?;
+        tx.put(key, Step(1))
+    })?;
+    assert_eq!(
+        other.transact(|tx| tx.emit(Probe)),
+        Err(Error::ClockMutationDuringAdmission)
+    );
+    assert_eq!(other.get::<Step>(key), Some(Step(1)));
     Ok(())
 }

@@ -36,6 +36,7 @@ pub enum Error {
     DerivedReadDuringAdmission,
     ConflictingWrite,
     EventStorm,
+    ClockMutationDuringAdmission,
 }
 
 trait Column {
@@ -773,6 +774,11 @@ impl RuleCx<'_, '_> {
             .current_writer
             .ok_or(Error::MutationOutsideAdmission)?;
         let fact = Fact::of::<T>(key);
+        // Clocks are admission authority, never rewritten by event handlers.
+        // Otherwise an invalid step might execute callbacks before rejection.
+        if self.evaluator.clocks.iter().any(|clock| clock.fact == fact) {
+            return Err(Error::ClockMutationDuringAdmission);
+        }
         if let Some(&(other, earlier)) = self.evaluator.write_claims.get(&fact)
             && writer != other
             && (kind == MutationKind::Replace || earlier == MutationKind::Replace)
@@ -783,6 +789,22 @@ impl RuleCx<'_, '_> {
         Ok(())
     }
 
+    /// Transaction-scoped fallible source update. Clone, validate, then stage;
+    /// no Drop-based writeback guard can be forgotten or bypassed.
+    pub fn try_update<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+        change: impl FnOnce(&mut T) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        self.claim::<T>(key, MutationKind::Update)?;
+        let mut value = self
+            .admission_transaction()?
+            .get::<T>(key)
+            .ok_or(Error::MissingComponent)?;
+        change(&mut value)?;
+        self.admission_transaction()?.put(key, value)
+    }
+
     /// Deterministically compose occurrence-driven relative updates in FIFO
     /// admission order. Relative updates are NOT proven commutative/parallel.
     pub fn update<T: Clone + Eq + 'static>(
@@ -790,11 +812,10 @@ impl RuleCx<'_, '_> {
         key: Key,
         change: impl FnOnce(&mut T),
     ) -> Result<(), Error> {
-        self.claim::<T>(key, MutationKind::Update)?;
-        if !self.admission_transaction()?.update::<T>(key, change)? {
-            return Err(Error::MissingComponent);
-        }
-        Ok(())
+        self.try_update(key, |value| {
+            change(value);
+            Ok(())
+        })
     }
 
     /// Absolute writes from distinct admitted event handlers reject on
@@ -809,6 +830,14 @@ impl RuleCx<'_, '_> {
     }
 
     pub fn despawn(&mut self, key: Key) -> Result<(), Error> {
+        if self
+            .evaluator
+            .clocks
+            .iter()
+            .any(|clock| clock.fact.scope == FactScope::Key(key))
+        {
+            return Err(Error::ClockMutationDuringAdmission);
+        }
         self.admission_transaction()?.despawn(key)
     }
 
@@ -1306,6 +1335,11 @@ impl Engine {
             incoming: &mut incoming,
             events: &mut input_events,
         })?;
+
+        // Validate externally admitted clocks before ANY callback executes.
+        for clock in &self.clocks {
+            (clock.validate)(&self.world, &proposed)?;
+        }
 
         let mut evaluator = Evaluator {
             world: proposed,
