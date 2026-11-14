@@ -741,10 +741,7 @@ fn canonical_is_dead(health: &Health) -> Result<Option<Dead>, Error> {
 fn canonical_line_amount(price: &Price, quantity: &Quantity) -> Result<Option<Amount>, Error> {
     Ok(Some(line_amount(price, quantity)))
 }
-fn canonical_outstanding(
-    amount: &Amount,
-    paid: &Paid,
-) -> Result<Option<Outstanding>, Error> {
+fn canonical_outstanding(amount: &Amount, paid: &Paid) -> Result<Option<Outstanding>, Error> {
     Ok(Some(outstanding(amount, paid)?))
 }
 fn canonical_nonempty(doc: &Document) -> Result<Option<Nonempty>, Error> {
@@ -792,8 +789,8 @@ fn register_invoice_b(app: &mut Engine) -> Result<(), Error> {
 // These are identical-implementation comparison tests, not independent
 // functional correctness oracles for the C kernel.
 #[test]
-fn comparable_game_contracts_have_identical_transaction_and_feedback_behavior()
--> Result<(), Error> {
+fn comparable_game_contracts_have_identical_transaction_and_feedback_behavior() -> Result<(), Error>
+{
     for create in [
         register_game_a as fn(&mut Engine) -> Result<(), Error>,
         register_game_b,
@@ -872,7 +869,10 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
         })?;
         assert_eq!(app.get::<Amount>(invoice), Some(Amount(36)));
         assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(36)));
-        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(36)));
+        assert_eq!(
+            app.singleton::<OutstandingTotal>(),
+            Some(OutstandingTotal(36))
+        );
         assert_eq!(app.get::<Nonempty>(invoice), Some(Nonempty));
 
         app.transact(|tx| {
@@ -881,7 +881,10 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
         })?;
         assert_eq!(app.get::<Paid>(invoice), Some(Paid(15)));
         assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(21)));
-        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(21)));
+        assert_eq!(
+            app.singleton::<OutstandingTotal>(),
+            Some(OutstandingTotal(21))
+        );
 
         assert_eq!(
             app.transact(|tx| tx.emit_to(invoice, Payment(i64::MAX))),
@@ -891,12 +894,18 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
         assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(21)));
         app.transact(|tx| tx.put(invoice, Document(" ".into())))?;
         assert_eq!(app.get::<Nonempty>(invoice), None);
-        assert_eq!(app.changes::<Nonempty>(), vec![OutputChange::Removed(invoice)]);
+        assert_eq!(
+            app.changes::<Nonempty>(),
+            vec![OutputChange::Removed(invoice)]
+        );
 
         app.transact(|tx| tx.remove::<Quantity>(invoice))?;
         assert_eq!(app.get::<Amount>(invoice), None);
         assert_eq!(app.get::<Outstanding>(invoice), None);
-        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(0)));
+        assert_eq!(
+            app.singleton::<OutstandingTotal>(),
+            Some(OutstandingTotal(0))
+        );
     }
     Ok(())
 }
