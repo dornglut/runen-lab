@@ -532,10 +532,13 @@ fn same_function_contract_supports_fallible_invoice_updates_optional_retractions
 -> Result<(), Error> {
     let mut app = Engine::new();
     app.register(line_amount)?;
-    app.register(outstanding)?;
+    // Negative compile proof at prior head ffb1892 (E0283): these two
+    // signatures are ambiguous with ordinary value-returning rules.
+    // Explicit shape markers are a *fallback*, not an ergonomic success.
+    app.register::<Fallible2<Amount, Paid, Outstanding>, _>(outstanding)?;
     app.register(outstanding_total)?;
     app.register(pay)?;
-    app.register(nonempty)?;
+    app.register::<Optional1<Document, Nonempty>, _>(nonempty)?;
 
     let row = Key::new(9, 1);
     app.transact(|tx| {
