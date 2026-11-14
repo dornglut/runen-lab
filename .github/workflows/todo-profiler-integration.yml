@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      TODO_PROFILER_ENGINE_REV: "018f155e3513207f4112debc46809413be0c3fa0"
-      RUNENWERK_SOURCE_REVISION: "018f155e3513207f4112debc46809413be0c3fa0"
+      TODO_PROFILER_ENGINE_REV: "dd011c92a09d780e2a3e77e1c1d72bb7f385e2f9"
+      RUNENWERK_SOURCE_REVISION: "dd011c92a09d780e2a3e77e1c1d72bb7f385e2f9"
       RUST_BACKTRACE: "1"
     steps:
       - name: Check out exact provisional Todo revision
@@ -132,7 +132,7 @@ jobs:
           set -e
           printf '%s\n' "$status" > profiler-evidence/delayed/interaction-exit.txt
 
-      - name: Privacy-screen original and delayed schema-v2 source-owned pointer captures independently
+      - name: Privacy-screen source-owned schema-v3 pointer and terminal input generations independently
         run: |
           set -euo pipefail
           python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence" "$TODO_PROFILER_ENGINE_REV"
@@ -167,6 +167,8 @@ jobs:
           print(f"todo_profiler_baseline={result['classification']} delayed={delayed['classification']}")
           print(f"canonical_pointer_baseline={result['source_pointer_physical_observations']} activated={result['source_pointer_activations_collected']}")
           print(f"canonical_pointer_delayed={delayed['source_pointer_physical_observations']} activated={delayed['source_pointer_activations_collected']} rejected={delayed['m13_processing_rejected_receipts']}")
+          print(f"native_input_generations_baseline=staged:{result['source_native_presentation_staged']},promoted:{result['source_native_input_generations_promoted']}")
+          print(f"native_input_generations_delayed=staged:{delayed['source_native_presentation_staged']},promoted:{delayed['source_native_input_generations_promoted']}")
           if result["classification"] != "pass":
               raise SystemExit("HOLD: original native Todo workflow did not qualify; delayed result is diagnostic only")
           if delayed["classification"] != "pass":

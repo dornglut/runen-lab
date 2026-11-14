@@ -22,7 +22,7 @@ top = {
     "schema_version", "session_id", "kind", "status", "clock",
     "gpu_clock_relation", "process_id", "os", "profile", "source_revision",
     "host_pacing", "native_windows", "event_capacity", "dropped_cpu_events",
-    "cpu_events", "stage_statistics", "render", "unavailable",
+    "cpu_events", "stage_statistics", "native_ui_presentations", "render", "unavailable",
 }
 event_keys = {
     "event_ordinal", "domain", "stage", "start_ns", "duration_ns",
@@ -52,6 +52,16 @@ pointer_defaults = {None, "applied", "suppressed"}
 activation_states = {
     "unavailable", "collected", "not_observed_in_retained_trace",
 }
+native_presentation_keys = {"status", "event_capacity", "dropped_events", "events"}
+native_presentation_row_keys = {
+    "event_ordinal", "observed_ns", "host_frame", "transition",
+    "ui_slot", "native_window", "render_surface", "publication_id",
+    "hit_test_generation", "coordinate_revision", "source_ingress_epoch",
+}
+native_presentation_transitions = {
+    "source_staged_for_render",
+    "terminal_present_promoted_for_input",
+}
 stats_keys = {
     "domain", "stage", "window", "ui_slot", "sample_count", "median_ns",
     "p95_ns", "duration_histogram_ns",
@@ -80,6 +90,10 @@ pointer_previous_down_mismatches = 0
 pointer_missing_trace = 0
 pointer_retained_snapshots = 0
 pointer_rejected_input = 0
+native_source_staged = 0
+native_input_promoted = 0
+native_presentation_evictions = 0
+native_unpaired_promotions = 0
 all_render = 0
 seen_ids = set()
 for path in outputs:
@@ -92,7 +106,7 @@ for path in outputs:
     ):
         raise SystemExit("privacy HOLD: controlled Todo task value or title in raw capture")
     data = json.loads(raw)
-    if set(data) != top or data["schema_version"] != 2:
+    if set(data) != top or data["schema_version"] != 3:
         raise SystemExit("schema HOLD: unknown capture fields or revision")
     if data["source_revision"] != expected:
         raise SystemExit("provenance HOLD: compiled source revision mismatch")
@@ -168,6 +182,71 @@ for path in outputs:
                 all_m13 += 1
                 if m13["processed_envelopes"] > 0:
                     productive_m13_pumps += 1
+    presentation = data["native_ui_presentations"]
+    if not isinstance(presentation, dict) or set(presentation) != native_presentation_keys:
+        raise SystemExit("schema/privacy HOLD: unknown native generation ledger field")
+    if (
+        presentation["status"] != "source_observed_not_physical_scanout"
+        or presentation["event_capacity"] != 1024
+        or type(presentation["dropped_events"]) is not int
+        or presentation["dropped_events"] < 0
+    ):
+        raise SystemExit("provenance HOLD: invalid native generation observation limits")
+    records = presentation["events"]
+    if not isinstance(records, list) or len(records) > 1024:
+        raise SystemExit("capacity HOLD: native generation observation overflow")
+    native_presentation_evictions += presentation["dropped_events"]
+    previous_observation = 0
+    staged = {}
+    local_staged = 0
+    local_promoted = 0
+    local_unpaired = 0
+    for observation in records:
+        if not isinstance(observation, dict) or set(observation) != native_presentation_row_keys:
+            raise SystemExit("privacy HOLD: unknown native presentation observation fields")
+        for field in (
+            "event_ordinal", "observed_ns", "ui_slot", "native_window",
+            "render_surface", "publication_id", "hit_test_generation",
+            "coordinate_revision",
+        ):
+            if type(observation[field]) is not int or observation[field] < 0:
+                raise SystemExit("schema HOLD: invalid presentation scalar")
+        ordinal = observation["event_ordinal"]
+        if ordinal <= previous_observation or observation["publication_id"] == 0:
+            raise SystemExit("provenance HOLD: nonmonotonic generation observation")
+        previous_observation = ordinal
+        if observation["host_frame"] is not None and (
+            type(observation["host_frame"]) is not int or observation["host_frame"] < 0
+        ):
+            raise SystemExit("schema HOLD: invalid source Host frame identity")
+        if observation["transition"] not in native_presentation_transitions:
+            raise SystemExit("schema HOLD: invented publication transition")
+        ingress = observation["source_ingress_epoch"]
+        key = (
+            observation["ui_slot"], observation["native_window"],
+            observation["render_surface"], observation["publication_id"],
+        )
+        if observation["transition"] == "source_staged_for_render":
+            if type(ingress) is not int or ingress < 0 or key in staged:
+                raise SystemExit("provenance HOLD: duplicate/invalid staged generation")
+            staged[key] = observation
+            local_staged += 1
+        else:
+            if ingress is not None:
+                raise SystemExit("provenance HOLD: fabricated terminal ingress epoch")
+            local_promoted += 1
+            old = staged.get(key)
+            if old is None:
+                local_unpaired += 1  # not evidence of missing stage: ring can evict
+            elif (
+                old["hit_test_generation"] != observation["hit_test_generation"]
+                or old["coordinate_revision"] != observation["coordinate_revision"]
+                or old["observed_ns"] > observation["observed_ns"]
+            ):
+                raise SystemExit("correlation HOLD: terminal source generation mismatch")
+    native_source_staged += local_staged
+    native_input_promoted += local_promoted
+    native_unpaired_promotions += local_unpaired
     if set(data["render"]) != render_keys or any(
         set(observation) != render_observation_keys
         for observation in data["render"]["observations"]
@@ -196,6 +275,11 @@ for path in outputs:
         "pointer_physical_observations": local_physical,
         "source_pointer_activations": local_activations,
         "m13_processing_rejected": local_rejected,
+        "native_source_staged": local_staged,
+        "native_input_promoted": local_promoted,
+        "native_presentation_evictions": presentation["dropped_events"],
+        "native_presentation_unpaired_promotions": local_unpaired,
+        "native_presentation_observations": records,
         "render_observations": len(data["render"]["observations"]),
     })
 
@@ -210,6 +294,7 @@ qualified = (
     and all_m13 > 0 and productive_m13_pumps > 0
     and committed_receipts > 0 and pointer_physical_observations > 0
     and pointer_activations_collected > 0 and all_render > 0
+    and native_source_staged > 0 and native_input_promoted > 0
     and any(e["cpu_events"] > 0 for e in sessions)
     and (interaction_only or any(
         e["capture"] == "resize.json" and e["status"] == "completed"
@@ -238,6 +323,10 @@ summary = {
     "source_pointer_unavailable": pointer_missing_trace,
     "source_pointer_retained_historical_snapshots": pointer_retained_snapshots,
     "m13_processing_rejected_receipts": pointer_rejected_input,
+    "source_native_presentation_staged": native_source_staged,
+    "source_native_input_generations_promoted": native_input_promoted,
+    "source_native_presentation_evictions": native_presentation_evictions,
+    "source_native_presentation_unpaired_promotions": native_unpaired_promotions,
     "render_observations": all_render,
     "captures": sessions,
     "unproven": [
