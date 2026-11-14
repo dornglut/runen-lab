@@ -1,0 +1,81 @@
+[
+  {
+    "tick": 1,
+    "hits": [
+      {
+        "target": "live",
+        "damage": 4
+      },
+      {
+        "target": "stale",
+        "damage": 3
+      },
+      {
+        "target": "live",
+        "damage": 6
+      }
+    ],
+    "expected": {
+      "health": 0,
+      "receipts": [
+        {
+          "kind": "applied",
+          "health_after": 6
+        },
+        {
+          "kind": "rejected"
+        },
+        {
+          "kind": "applied",
+          "health_after": 0
+        }
+      ],
+      "deaths": [
+        1
+      ]
+    }
+  },
+  {
+    "tick": 2,
+    "hits": [
+      {
+        "target": "live",
+        "damage": 0
+      },
+      {
+        "target": "live",
+        "damage": 8
+      },
+      {
+        "target": "stale",
+        "damage": 2
+      }
+    ],
+    "expected": {
+      "health": 0,
+      "receipts": [
+        {
+          "kind": "applied",
+          "health_after": 0
+        },
+        {
+          "kind": "applied",
+          "health_after": 0
+        },
+        {
+          "kind": "rejected"
+        }
+      ],
+      "deaths": []
+    }
+  },
+  {
+    "tick": 3,
+    "hits": [],
+    "expected": {
+      "health": 0,
+      "receipts": [],
+      "deaths": []
+    }
+  }
+]
