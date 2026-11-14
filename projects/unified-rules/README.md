@@ -268,6 +268,36 @@ The consumer demonstrates possible typed semantics **and the API
 boilerplate they require**; it does not establish an accepted unified
 public API or reliable delivery.
 
+## Full invoice consumer on existing scoped rule contract — decision evidence
+
+The independently compiling `tests/end_to_end_invoice_candidate.rs` uses
+only the current `Engine::compute::<Each<T> / One<T>>` interface. It composes
+checked line arithmetic, reparentable line→invoice relationships,
+per-invoice sums, a **real keyless** open balance, monotonic keyless time,
+transition-driven reminders, typed post-commit effect requests and
+transactional overflow/missing-parent rollback. No fake summary record,
+app-specific scheduler, custom dependency graph, or duplicate engine source
+is needed. A second test compares grouped/global results and overdue state
+against separately calculated values across 48 deterministic edits.
+
+**Source-structure evidence:** The file contains approximately 325 lines,
+including data types, test fixtures, two tests and independent reference
+calculations; the engine-building function occupies about 70 lines. These
+are **not** comparable figures for complete Bevy/RunenECS applications.
+The same user-visible API across the *full game consumer* is **not yet
+proven**: `tests/consumer.rs` still uses the older per-key `engine.rule`
+surface rather than `compute::<Each<T>>`. The A function-injection and B
+relation candidates also have not acquired global/time/events/effects support
+through their **own** frontends. This is evidence for scoped-C expressiveness,
+**not** a successful head-to-head frontend comparison.
+
+**Negative scalability evidence:** The per-invoice calculation calls
+`cx.all::<LineAmount>()` and `cx.all::<Line>()`, so every affected invoice
+rebuilds/scans entire typed collections. Input admission clones the whole
+world and rebuilds the reverse dependency index. No incremental grouping,
+borrowed store or durable I/O is established. The reminder request remains
+volatile and independently acknowledged, with no external execution proof.
+
 ## Reproduce
 
 ```sh

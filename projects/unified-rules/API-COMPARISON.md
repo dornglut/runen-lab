@@ -302,6 +302,44 @@ a useful semantic primitive, but do **not** adopt it as a final engine API.
 The frontend still requires manually authored command orchestration and
 transaction/admission glue, so RULE-03 / RULE-06 / RULE-07 remain **HOLD**.
 
+## I — end-to-end invoice contract using the existing scoped C frontend
+
+The new `tests/end_to_end_invoice_candidate.rs` composes four
+`Engine::compute` rules: per-line checked amount, per-invoice grouped
+total, one keyless outstanding balance, and per-invoice overdue state with
+event + effect-request staging. The actual keyless `Day` input is validated
+monotonically via `clock_in::<One<Day>>`. The suite covers reparenting,
+deletion, payment, repeated no-op edits, retained/acknowledged requests,
+missing-parent/overflow transaction rejection and a **48-step independent
+per-invoice + global reference model**. No SUMMARY or CLOCK entity is created.
+
+| Requirement | Function injection A | Relational B | Scoped `compute` C in new consumer |
+| --- | --- | --- | --- |
+| Per-line checked calculation | Requires fallible-function extension | Uses raw callback | Native per-key task |
+| Cross-invoice relations and grouping | No frontend expression | Typed algebra, full snapshot | Raw `cx.all`, full snapshot |
+| Global open balance | Fallback to artificial key/raw rule | Fallback to artificial key/raw rule | True keyless `One<OpenBalance>` |
+| Monotonic keyless time | Unsupported in own frontend | Older keyed clock fallback | Scoped clock admission |
+| Once-on-transition reminder + effect request | Unsupported | Old raw callback, no effect lifecycle | In-memory `emit` / `request` in same rule |
+| Full independent game consumer in this frontend | **Not proven** | **Not proven** | **Not proven** (game consumer uses `rule`) |
+| Indexed/incremental joins, borrowing, parallelism | Not proven | Not proven | Not proven |
+
+**Critical distinction:** This is a *complete vertical invoice application
+scenario*, **not** a complete frontend comparison. The C test still relies
+on `RuleCx` for every domain, performs O(total lines × invoices) repeated
+collection scans on affected invoices, and carries explicit input and
+outbox management. The game workload still uses the older `rule::<T>`
+surface. The approximately 70-line engine configuration span excludes
+types, fixtures, assertions and external effect execution; do not compare
+that number against Bevy source LOC or call it a productivity win.
+
+**Next discriminating gate:** Compare A/B/C against an identical semantic
+workload **without raw fallback paths**; a candidate unable to express
+required capabilities should receive a clear FAIL, not a fake wrapper
+that hides the missing contract. Then compile the existing game consumer
+under the same selected scoped interface, qualify failure semantics,
+and create equivalent public Bevy/RunenECS consumers before any performance
+or developer-ergonomics GO claim. Retain RULE-01/03/04/05/06/07 **HOLD**.
+
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in
