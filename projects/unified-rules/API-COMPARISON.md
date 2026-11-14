@@ -379,3 +379,45 @@ Retain findings RULE-01 (full clone/reindex), RULE-02 (time authority),
 RULE-03 (event/effects), RULE-04 (generality/borrow), RULE-05 (stack safety),
 RULE-06 (purity/isolation), and RULE-07 (frontend/output scope). **HOLD**
 the architecture and PR merge gate.
+
+
+## K — composition probe: one registration, optional functions and operators
+
+The independent `tests/compute_combinators_candidate.rs` compiles one
+test-local **fallible** `required2` typed-function combinator and a small
+`Relation` algebra against the **unchanged** scoped
+`Engine::compute::<Each<T> / One<T>>` registration.
+
+Both an invoice application and a game consumer intentionally mix:
+- `compute::<Each<T>>(required2(|a: &A, b: &B| -> Result<T, Error> { ... }))`
+  for required per-record derived values, with absence/retraction and
+  checked failure;
+- the ordinary `compute::<Each<T>>` callback for dynamic parent lookups,
+  prior-commit feedback and reminder occurrences;
+- `Relation` joins, grouped sums and reductions *inside* the same
+  `compute` callback, including a real `One<T>` global result.
+
+The test exercises invoice grouping on relationship redirection, effect
+request staging, non-tick hierarchy propagation, dynamic-cycle rollback,
+and failed checked arithmetic. It uses no altered kernel, no second
+registration method, no artificial global entity, and no new scheduler.
+
+**Discriminating result, not an architecture GO:** This tests whether the
+**ergonomic strengths** of function injection and relational operators can
+be composed as ordinary Rust helpers under one rule contract. It does
+**not** make A or B independently complete alternative frontends; the
+dynamic, temporal and effect cases still explicitly use `RuleCx`.
+`required2` clones inputs because the underlying `cx.get` does; the
+`Relation` helper materializes full snapshots and joins, without indexes,
+incrementality or query planning. No numerical speed or Bevy comparison
+is implied. Any claims of successful compilation must be tied to exact-head
+CI; this source comparison alone is not execution evidence.
+
+**Architecture implication:** Keep the three questions separate:
+(1) semantic output identity and transaction ownership, (2) optional
+ergonomic function/query operators, (3) the scaling implementation.
+Embedding A/B operators as helpers may prevent an unnecessary hybrid public
+registration API, but a single *registration name* does not guarantee
+one understandable programming model. A/B true independent universality,
+ownership/borrowing, workload equivalence and performance remain
+**HOLD** pending separately qualified evidence.
