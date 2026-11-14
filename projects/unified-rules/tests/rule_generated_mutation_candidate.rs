@@ -299,8 +299,12 @@ struct Charge {
     amount: i64,
 }
 fn charge(cx: &mut RuleCx<'_, '_>, c: Charge) -> Result<Option<()>, Error> {
+    let Money(before) = cx
+        .get::<Money>(c.invoice)?
+        .ok_or(Error::MissingComponent)?;
+    let after = before.checked_add(c.amount).ok_or(Error::Overflow)?;
     cx.update::<Money>(c.invoice, |money| {
-        money.0 += c.amount;
+        money.0 = after;
     })?;
     Ok(None)
 }
