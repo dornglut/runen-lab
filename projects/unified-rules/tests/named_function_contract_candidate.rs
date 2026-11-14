@@ -625,3 +625,278 @@ fn ordinary_event_function_accepts_non_eq_payload_and_rolls_back_invalid_value()
     assert_eq!(app.occurrences::<Targeted<AnalogHit>>().len(), 1);
     Ok(())
 }
+
+// Alternative B: one canonical derived return protocol instead of opportunistic
+// T / Option<T> / Result<T, Error> interpretations. ALL these adapters delegate
+// to the exact same C evaluator; no second scheduler or storage is created.
+// Scope, context, targeted event addressing, and clock metadata still exist.
+struct CanonicalRead1<A, O>(PhantomData<(A, O)>);
+struct CanonicalRead2<A, B, O>(PhantomData<(A, B, O)>);
+struct CanonicalKeyed<O>(PhantomData<O>);
+struct CanonicalKeyless<O>(PhantomData<O>);
+struct CanonicalMutation<E, T>(PhantomData<(E, T)>);
+struct CanonicalEvent<E>(PhantomData<E>);
+
+trait CanonicalInstall<S> {
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error>;
+}
+impl<F, A, O> CanonicalInstall<CanonicalRead1<A, O>> for F
+where
+    A: Clone + Eq + 'static,
+    O: Clone + Eq + 'static,
+    F: Fn(&A) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<Each<O>>(move |cx, key| match cx.get::<A>(key)? {
+            Some(value) => self(&value),
+            None => Ok(None),
+        })
+    }
+}
+impl<F, A, B, O> CanonicalInstall<CanonicalRead2<A, B, O>> for F
+where
+    A: Clone + Eq + 'static,
+    B: Clone + Eq + 'static,
+    O: Clone + Eq + 'static,
+    F: Fn(&A, &B) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<Each<O>>(move |cx, key| {
+            let Some(a) = cx.get::<A>(key)? else {
+                return Ok(None);
+            };
+            let Some(b) = cx.get::<B>(key)? else {
+                return Ok(None);
+            };
+            self(&a, &b)
+        })
+    }
+}
+impl<F, O> CanonicalInstall<CanonicalKeyed<O>> for F
+where
+    O: Clone + Eq + 'static,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, Key) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<Each<O>>(self)
+    }
+}
+impl<F, O> CanonicalInstall<CanonicalKeyless<O>> for F
+where
+    O: Clone + Eq + 'static,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>) -> Result<Option<O>, Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<One<O>>(move |cx, ()| self(cx))
+    }
+}
+impl<F, E, T> CanonicalInstall<CanonicalMutation<E, T>> for F
+where
+    E: Clone + 'static,
+    T: Clone + Eq + 'static,
+    F: Fn(&E, &mut T) -> Result<(), Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<On<Targeted<E>>>(move |cx, event| {
+            cx.try_update::<T>(event.entity, |target| self(&event.value, target))?;
+            Ok(None)
+        })
+    }
+}
+impl<F, E> CanonicalInstall<CanonicalEvent<E>> for F
+where
+    E: Clone + 'static,
+    F: for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, E) -> Result<(), Error> + 'static,
+{
+    fn install_canonical(self, engine: &mut Engine) -> Result<(), Error> {
+        engine.compute::<On<E>>(move |cx, event| {
+            self(cx, event)?;
+            Ok(None)
+        })
+    }
+}
+trait CanonicalRegister {
+    fn register_canonical<S, F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: CanonicalInstall<S>;
+}
+impl CanonicalRegister for Engine {
+    fn register_canonical<S, F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: CanonicalInstall<S>,
+    {
+        f.install_canonical(self)
+    }
+}
+
+fn canonical_health_percent(
+    health: &Health,
+    max: &MaxHealth,
+) -> Result<Option<HealthPercent>, Error> {
+    Ok(Some(health_percent(health, max)))
+}
+fn canonical_is_dead(health: &Health) -> Result<Option<Dead>, Error> {
+    Ok(Some(is_dead(health)))
+}
+fn canonical_line_amount(price: &Price, quantity: &Quantity) -> Result<Option<Amount>, Error> {
+    Ok(Some(line_amount(price, quantity)))
+}
+fn canonical_outstanding(
+    amount: &Amount,
+    paid: &Paid,
+) -> Result<Option<Outstanding>, Error> {
+    Ok(Some(outstanding(amount, paid)?))
+}
+fn canonical_nonempty(doc: &Document) -> Result<Option<Nonempty>, Error> {
+    Ok(nonempty(doc))
+}
+
+fn register_game_a(app: &mut Engine) -> Result<(), Error> {
+    app.clock_in::<One<Step>>((), |s| s.epoch)?;
+    app.register(health_percent)?;
+    app.register(is_dead)?;
+    app.register(movement)?;
+    app.register(world_position)?;
+    app.register(damage)?;
+    app.register(death_transition)?;
+    app.register(spawn_loot)?;
+    app.register(loot_count)
+}
+fn register_game_b(app: &mut Engine) -> Result<(), Error> {
+    app.clock_in::<One<Step>>((), |s| s.epoch)?;
+    app.register_canonical(canonical_health_percent)?;
+    app.register_canonical(canonical_is_dead)?;
+    app.register_canonical(movement)?;
+    app.register_canonical(world_position)?;
+    app.register_canonical(damage)?;
+    app.register_canonical(death_transition)?;
+    app.register_canonical(spawn_loot)?;
+    app.register_canonical(loot_count)
+}
+fn register_invoice_a(app: &mut Engine) -> Result<(), Error> {
+    app.register(line_amount)?;
+    app.register::<Fallible2<Amount, Paid, Outstanding>, _>(outstanding)?;
+    app.register::<Optional1<Document, Nonempty>, _>(nonempty)?;
+    app.register(pay)?;
+    app.register(outstanding_total)
+}
+fn register_invoice_b(app: &mut Engine) -> Result<(), Error> {
+    app.register_canonical(canonical_line_amount)?;
+    app.register_canonical(canonical_outstanding)?;
+    app.register_canonical(canonical_nonempty)?;
+    app.register_canonical(pay)?;
+    app.register_canonical(outstanding_total)
+}
+
+// Test both frontends on IDENTICAL input admission and output assertions.
+// These are identical-implementation comparison tests, not independent
+// functional correctness oracles for the C kernel.
+#[test]
+fn comparable_game_contracts_have_identical_transaction_and_feedback_behavior()
+-> Result<(), Error> {
+    for create in [
+        register_game_a as fn(&mut Engine) -> Result<(), Error>,
+        register_game_b,
+    ] {
+        let mut app = Engine::new();
+        create(&mut app)?;
+        let player = Key::new(1, 1);
+        let enemy = Key::new(2, 1);
+        let sword = Key::new(3, 1);
+        let loot = Key::new(102, 1);
+        app.transact(|tx| {
+            for key in [player, enemy, sword] {
+                tx.spawn(key)?;
+            }
+            tx.put_singleton(Step { epoch: 1, dt: 0 })?;
+            tx.put(player, Seed(10))?;
+            tx.put(player, Velocity(0))?;
+            tx.put(player, Health(100))?;
+            tx.put(player, MaxHealth(100))?;
+            tx.put(enemy, Seed(20))?;
+            tx.put(enemy, Velocity(0))?;
+            tx.put(enemy, Health(40))?;
+            tx.put(enemy, MaxHealth(40))?;
+            tx.put(sword, Seed(3))?;
+            tx.put(sword, Velocity(0))?;
+            tx.put(sword, Parent(player))
+        })?;
+        app.transact(|tx| {
+            tx.put(player, Velocity(2))?;
+            tx.put_singleton(Step { epoch: 2, dt: 1 })?;
+            tx.emit_to(enemy, Hit { amount: 10 })?;
+            tx.emit_to(enemy, Hit { amount: 30 })
+        })?;
+        assert_eq!(app.get::<Health>(enemy), Some(Health(0)));
+        assert_eq!(app.get::<Dead>(enemy), Some(Dead(true)));
+        assert_eq!(app.get::<HealthPercent>(enemy), Some(HealthPercent(0)));
+        assert_eq!(app.get::<Position>(player), Some(Position(12)));
+        assert_eq!(app.get::<WorldPosition>(sword), Some(WorldPosition(15)));
+        assert_eq!(app.get::<Loot>(loot), Some(Loot));
+        assert_eq!(app.singleton::<LootCount>(), Some(LootCount(1)));
+        assert_eq!(app.occurrences::<Died>().len(), 1);
+        assert_eq!(app.pending_effects::<PlaySound>().len(), 1);
+
+        app.transact(|_| Ok(()))?;
+        assert!(app.occurrences::<Died>().is_empty());
+        assert_eq!(app.pending_effects::<PlaySound>().len(), 1);
+        assert_eq!(
+            app.transact(|tx| tx.emit_to(Key::new(99, 1), Hit { amount: 1 })),
+            Err(Error::MissingComponent)
+        );
+        assert_eq!(
+            app.transact(|tx| tx.put(player, Parent(sword))),
+            Err(Error::RuleCycle)
+        );
+        assert_eq!(app.get::<WorldPosition>(sword), Some(WorldPosition(15)));
+    }
+    Ok(())
+}
+
+#[test]
+fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_behavior()
+-> Result<(), Error> {
+    for create in [
+        register_invoice_a as fn(&mut Engine) -> Result<(), Error>,
+        register_invoice_b,
+    ] {
+        let mut app = Engine::new();
+        create(&mut app)?;
+        let invoice = Key::new(12, 1);
+        app.transact(|tx| {
+            tx.spawn(invoice)?;
+            tx.put(invoice, Price(12))?;
+            tx.put(invoice, Quantity(3))?;
+            tx.put(invoice, Paid(0))?;
+            tx.put(invoice, Document("invoice".into()))
+        })?;
+        assert_eq!(app.get::<Amount>(invoice), Some(Amount(36)));
+        assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(36)));
+        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(36)));
+        assert_eq!(app.get::<Nonempty>(invoice), Some(Nonempty));
+
+        app.transact(|tx| {
+            tx.emit_to(invoice, Payment(10))?;
+            tx.emit_to(invoice, Payment(5))
+        })?;
+        assert_eq!(app.get::<Paid>(invoice), Some(Paid(15)));
+        assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(21)));
+        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(21)));
+
+        assert_eq!(
+            app.transact(|tx| tx.emit_to(invoice, Payment(i64::MAX))),
+            Err(Error::Overflow)
+        );
+        assert_eq!(app.get::<Paid>(invoice), Some(Paid(15)));
+        assert_eq!(app.get::<Outstanding>(invoice), Some(Outstanding(21)));
+        app.transact(|tx| tx.put(invoice, Document(" ".into())))?;
+        assert_eq!(app.get::<Nonempty>(invoice), None);
+        assert_eq!(app.changes::<Nonempty>(), vec![OutputChange::Removed(invoice)]);
+
+        app.transact(|tx| tx.remove::<Quantity>(invoice))?;
+        assert_eq!(app.get::<Amount>(invoice), None);
+        assert_eq!(app.get::<Outstanding>(invoice), None);
+        assert_eq!(app.singleton::<OutstandingTotal>(), Some(OutstandingTotal(0)));
+    }
+    Ok(())
+}
