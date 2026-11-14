@@ -110,18 +110,18 @@ fn app() -> Result<Engine, Error> {
                 kind: CommandKind::Start,
             })?;
         }
-        if let Some(request) = cx.changed::<CancelRequested>(key)? {
-            if request.revision == intent.revision {
-                cx.request(WorkCommand {
-                    ticket: WorkTicket {
-                        key,
-                        revision: intent.revision,
-                    },
-                    kind: CommandKind::Cancel {
-                        attempt: request.attempt,
-                    },
-                })?;
-            }
+        if let Some(request) = cx.changed::<CancelRequested>(key)?
+            && request.revision == intent.revision
+        {
+            cx.request(WorkCommand {
+                ticket: WorkTicket {
+                    key,
+                    revision: intent.revision,
+                },
+                kind: CommandKind::Cancel {
+                    attempt: request.attempt,
+                },
+            })?;
         }
         // Force a tracked but semantically irrelevant dependency to detect
         // repeated request generation on unrelated invalidation.
@@ -348,17 +348,16 @@ impl FakeExecutor {
             self.retire_ticket(engine, ticket);
             return Ok(Decision::AlreadyTerminal);
         }
-        if let CommandKind::Cancel { attempt } = kind {
-            if engine.get::<CancelRequested>(ticket.key)
+        if let CommandKind::Cancel { attempt } = kind
+            && engine.get::<CancelRequested>(ticket.key)
                 != Some(CancelRequested {
                     revision: ticket.revision,
                     attempt,
                 })
-            {
-                engine.acknowledge_effect(id);
-                self.in_flight.remove(&id);
-                return Ok(Decision::Stale);
-            }
+        {
+            engine.acknowledge_effect(id);
+            self.in_flight.remove(&id);
+            return Ok(Decision::Stale);
         }
         let next = match (kind, report, current.phase) {
             (
