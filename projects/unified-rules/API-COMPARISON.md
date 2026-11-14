@@ -603,3 +603,109 @@ the architecture rather than adding a mirrored World or app-specific
 recompute/scheduler. Then run equivalent complete Bevy/RunenECS
 applications and sparse/dense Release benchmarks before GO/PIVOT/REJECT.
 
+## N — one-World native execution and fallible-write discriminator (RULE-04/RULE-07)
+
+**Exact immutable source / proof:** [the independent ECS consumer at
+`a80b94c4414c5b9438941968796ce08c2c088310`](https://github.com/dornglut/runen-lab/blob/a80b94c4414c5b9438941968796ce08c2c088310/projects/unified-rules/tests/one_world_execution_boundary.rs).
+The accepted RunenECS dependency is still
+`5d6af86bfa7c58f1ad26ec73635590a72e89ef37`. Its
+[exact-head project workflow](https://github.com/dornglut/runen-lab/actions/runs/43599393865)
+passed **97/97 Debug and 97/97 Release tests**, Rustfmt, strict Clippy and
+locked builds. [Canonical repository validation](https://github.com/dornglut/runen-lab/actions/runs/43599394241)
+passed on the same source SHA. The three added tests pass in both profiles.
+Earlier intermediate heads failed first Rustfmt and then a rejected tuple query
+shape; their failures were corrected, not suppressed.
+
+### What is now executable
+
+1. One actual RunenECS `World`, one ordinary native `Runtime` system, and
+   `Query<(&mut ProjectedX, &Position, &Velocity)>` compute float
+   `ProjectedX` in place without requiring `Clone` or `Eq`.
+   Both ordinary finite output and NaN propagation are observed. This confirms
+   a non-`Eq` **native ECS component**, *not a C-produced derived output*.
+2. Two eager fallible `World::entity_mut(...).require_mut(...)` updates
+   expose the first successful mutation when the second operation returns an
+   error. A closed, known two-record write set can instead preflight both
+   components before changing either; the rejected case keeps data and the
+   change cursor unchanged. Preflight is a bounded positive alternative for
+   this failure, **not an all-or-nothing transaction primitive** for arbitrary
+   callbacks, allocation, structural mutation or application effects.
+3. Typed `Parent` relations use ECS `Entity` directly, with directed
+   source-cardinality-one and cycle-forbidden policy. The consumer verifies a
+   rejected cycle, preserved prior edges and cleanup on middle-entity despawn.
+   This proves native relation semantics, **not reactive descendant
+   invalidation or atomic relation-plus-component publication**.
+
+The first compile attempt used
+`Query<(&Position, &Velocity, &mut ProjectedX)>`, which does *not* satisfy
+accepted RunenECS's `QueryData` tuple implementations. Reordering the
+mutable component to the first position compiled and executed. A future
+one-function authoring model must account for these type-shape diagnostics,
+not mistake Rust tuple permutations for an established uniform API.
+
+### Direct source/API implications
+
+- `runen_ecs::Component: 'static` permits non-`Eq` and non-`Clone`
+  values; C's `OutputShape::Value: Clone + Eq + 'static` does not.
+  A C output cannot simply be cast or registered as an arbitrary ECS component.
+- The Lab C `Engine::transact` stages with `self.world.clone()` and uses
+  C-owned `Key` identities. Native `World` borrowing and C's cached graph
+  have **not** been joined; the new test deliberately does not create a
+  second World or a sync adapter.
+- Native RunenECS `BatchCommands::apply` executes queued commands in
+  sequence and can error after an earlier command. Its internal
+  `MutationJournal` updates mutation/change observation, not arbitrary value
+  rollback. Existing individual-operation failure atomicity cannot be
+  generalized into a batch transaction by assertion.
+- Native `Changed<T>` can report mutable access without numeric change
+  (previous consumer with `dt=0`). A derived-value policy must explicitly
+  choose observation-by-access, replacement, or a domain-selected equality
+  function. Default `PartialEq` for `f32` is not a universal fix: NaN is
+  not equal to itself; approximate tolerance may violate transitivity.
+  Removal, relation redirection and epoch-sensitive invalidation require
+  their own precise admission/observation rules.
+- RunenECS remains the liveness, relation, storage and scheduler authority.
+  Even if a rule frontend is chosen, an optional reactive evaluator must not
+  introduce independent entity IDs or a concurrently authoritative scheduler.
+
+### Architectural comparison after this discriminator
+
+| Option | Direct evidence | Principal cost / missing proof | Disposition |
+| --- | --- | --- | --- |
+| Replace ECS execution with the C kernel as-is | Lab C semantics are testable, but it owns a separate cloned World and `Key` | Violates one-World requirement; `Clone + Eq`, O(World) staging, duplicate scheduling | **Reject as-is** |
+| Directly make every ECS function a transactional reactive rule | Native ECS borrowing works, but no arbitrary all-or-nothing C commit integration has been shown | Dense per-tick cost, source/derived role conflicts, non-`Eq` change policies, feedback safety | **HOLD** |
+| Retain RunenECS execution and qualify selected C mechanisms behind one coherent application authoring contract | Native floating-point systems, relations and explicit scheduling pass | Needs one-World incremental observation, bounded validated publication and complete game/invoice developer comparisons | **Preferred PIVOT investigation**, not adoption |
+| Keep accepted RunenECS without C | Fully usable native components/queries/scheduler, and no speculative runtime | Sparse derived ergonomics/transactional composition still require explicit code | **Viable fallback** |
+
+### Minimum next decision-proof, not a framework implementation authorization
+
+The owning architecture investigation must specify **which operations genuinely
+require atomic publication**, including the boundary of source edits, derived
+values, entity births/deaths, relation edits, occurrence dispatch and effect
+requests. Discriminate a **closed, prevalidated application batch** from a
+**reusable, typed ECS publication capability**; do not presume a generic
+transaction engine is necessary. If the latter is essential and unavailable on
+accepted public RunenECS, route its smallest contract to an independently
+authorized RunenECS issue. Keep identity, ownership, borrowing, scheduling and
+liveness exclusively in RunenECS.
+
+Only then compile **one real ECS-owned World** executing representative game
+and independent invoice rules with deterministic failure/retraction cases and
+no cloned/shadow World. Compare complete public-API Bevy and RunenECS authored
+code, then measure optimized **1,024 / 65,536 / 1,000,000** entity cases,
+dense and sparse, including full transaction and retained memory. This
+checkpoint has **no C-over-ECS adapter, full equivalent comparison, or
+performance result**.
+
+Runenwerk already has a RunenNet-backed replication, delivery-acceptance and
+prediction integration under `engine/src/plugins/net/`. Chimera Signal's
+existing authoritative-server implementation uses Lightyear. These are
+separate downstream requirements: gameplay commit, replication projection,
+transport acceptance, and prediction/reconciliation must remain distinct.
+No Chimera migration or networking rewrite is authorized here.
+
+**Verdict: PIVOT as research hypothesis; HOLD on C architecture acceptance
+and Lab PR #16 merge.** This executable evidence strengthens the case for a
+RunenECS-native foundation and against copying the C kernel as a replacement.
+It does not prove the proposed unified Rule API preferable to Bevy.
+
