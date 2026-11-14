@@ -70,9 +70,7 @@ fn apply(tx: &mut Transaction<'_>, candidate: Candidate, hit: Hit) -> Result<(),
             tx.put(hit.target, health)
         }
         Candidate::EditGuard => {
-            let mut health = tx
-                .edit::<Health>(hit.target)?
-                .ok_or(Error::MissingEntity)?;
+            let mut health = tx.edit::<Health>(hit.target)?.ok_or(Error::MissingEntity)?;
             damage_direct(&mut health, hit);
             Ok(())
         }
@@ -213,7 +211,10 @@ fn edit_guard_respects_derived_ownership_and_stale_entity_keys() -> Result<(), E
             health.0 = 70;
         }
         assert_eq!(tx.get::<Health>(key), Some(Health(70)));
-        assert!(tx.edit::<HealthPercent>(key).is_err_and(|err| err == Error::DerivedIsReadOnly));
+        assert!(
+            tx.edit::<HealthPercent>(key)
+                .is_err_and(|err| err == Error::DerivedIsReadOnly)
+        );
         Ok(())
     })?;
     assert_eq!(app.get::<HealthPercent>(key), Some(HealthPercent(70)));
