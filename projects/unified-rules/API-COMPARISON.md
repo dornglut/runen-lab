@@ -421,3 +421,108 @@ registration API, but a single *registration name* does not guarantee
 one understandable programming model. A/B true independent universality,
 ownership/borrowing, workload equivalence and performance remain
 **HOLD** pending separately qualified evidence.
+
+## L — same-workload function-return contract discrimination
+
+**Research checkpoint only; frontend selection remains HOLD.** Test source:
+[`named_function_contract_candidate.rs`](tests/named_function_contract_candidate.rs).
+Exact behavior and compiler evidence at code head
+`4d5d628ffb82d48a4027a535f921bac6de5ed654`:
+[project qualification](https://github.com/dornglut/runen-lab/actions/runs/43587263065)
+(**92/92 Debug and 92/92 Release**, Rustfmt, strict Clippy) and
+[canonical validation](https://github.com/dornglut/runen-lab/actions/runs/43587263341),
+both successful. The tests run **four** registration contracts against
+**identical** game and invoice fixtures, expected state and failure assertions.
+They share the *same* underlying evaluator, staged transaction mechanics,
+rule callback implementations and test assertions. This is frontend
+expressiveness and compatibility evidence, **not** an independent oracle,
+new scheduler, public API or runtime comparison with Bevy/RunenECS.
+
+The earlier unconstrained `register(outstanding)` /
+`register(nonempty)` produced a real Rust E0283 ambiguity at
+[negative compile head `ffb1892`](https://github.com/dornglut/runen-lab/actions/runs/43584365865):
+the blanket pure `Fn(...) -> O` adapters also fit
+`O = Result<T, Error>` or `O = Option<T>` because those types satisfy
+the persistent-output bounds. The four follow-on variants test different
+ways to make that distinction explicit.
+
+| Form | Pure functions | Fallible and optional functions | Per-call marker | Required extra declaration |
+| --- | --- | --- | --- | --- |
+| P1: unconstrained opportunistic injection | `fn(&A) -> T` | Ordinary `Result<T>` / `Option<T>` | **Yes** for ambiguous functions | Signature-shape generics at registration |
+| P2: one canonical derived result | `fn(&A) -> Result<Option<T>, Error>` | Same canonical return | No | Wrappers on otherwise pure functions |
+| P3: explicit non-`Eq` tagged outcome | `fn(&A) -> T` | `fn(&A) -> TaggedOutcome<T>` | No | Custom result wrapper and conversion |
+| P4: explicit produced-type marker | `fn(&A) -> T` | Ordinary `Result<T>` / `Option<T>` | No | Output type must implement `MarkedOutput` |
+
+For the identical **invoice** registration fixture P1 uses **two explicit
+signature-shape markers**, P2 adds **three canonical-return adapter functions**,
+P3 adds **two tagged-outcome adapter functions**, and P4 uses **ten test-local
+produced-type opt-ins** across the complete game-plus-invoice fixture.
+These figures are narrowly scoped ceremony counts, **not developer LOC,
+total complexity or productivity measurements**. Each form registers five
+invoice behaviors and eight game behaviors plus one scoped clock.
+Cross-entity navigation, temporal reads, global aggregations, spawning,
+staged effects and failure diagnostics still use the same advanced `RuleCx`
+behavior or input-admission interface in every variant.
+
+**P4 is the strongest *provisional frontend contract* for stable Rust
+ergonomics in this bounded comparison**, because it preserves ordinary
+`?` propagation inside fallible `Result<T, Error>` functions while
+avoiding signature-shape markers at the call site. In this experiment,
+the marker is implemented once for each eligible produced data type.
+Whether this can reuse the existing `runen_ecs::Component` (or another
+authoritative type classification) **has not been compile-proven**; forcing
+a new per-type derive everywhere could erase the ergonomic advantage.
+Output-role typing must also avoid accidentally treating `Option<T>` or
+`Result<T, Error>` themselves as stored outputs. P4 is **not selected** as
+an accepted Runenwerk/RunenECS contract.
+
+P3 resolves inference but sacrifices native `?` inside a function whose
+return type is the custom wrapper: implementing the relevant `std::ops::Try`
+trait for an arbitrary application type remains
+[nightly-only](https://doc.rust-lang.org/stable/std/ops/trait.Try.html).
+P2 retains ordinary `?` but requires `Ok(Some(...))` even for simple
+pure derivation. P1 retains the plainest function signatures but can require
+long signature generics at registration. These are real developer-level
+tradeoffs, not equivalent spellings.
+
+### What these tests do not establish
+
+- **No new general semantics.** P1–P4 use the same serial cloned-world,
+  feedback-limited kernel. Passing the same assertions cannot prove full
+  transactional isolation, durable effects, arbitrary feedback or safe
+  in-rule external I/O.
+- **No borrowing/parallel proof.** Injected references borrow cloned
+  snapshots; the kernel still requires stored state `Clone + Eq + 'static`,
+  rebuilds dependency indexes and scans collections.
+- **No complete portability qualification.** The marker is test-local;
+  accepted public RunenECS source and actual component derive behavior have
+  not been used to compile this candidate. Cross-repo lifetime, relation,
+  access and scheduling capabilities are unqualified.
+- **No competitive advantage established.** There are no complete equivalent
+  public-API Bevy and RunenECS consumers with fair matched semantic
+  guarantees and rotated Release performance trials.
+
+### Next discriminating gate — avoid further surface-only experiments
+
+1. **Type-authority proof:** inspect and compile against immutable accepted
+   RunenECS `Component`/query interfaces to test whether P4's required type
+   distinction reuses existing declarations, preserves output ownership and
+   avoids new redundant type hierarchies. If this fails, P4 loses its
+   provisional ergonomic advantage.
+2. **Backend feasibility:** compare C's transaction/invalidations with real
+   RunenECS entity, relation, query, mutation journal and deterministic
+   serial/parallel contracts, without copying or moving source into Lab.
+   Identify whether a thin higher-level semantic layer is feasible at all.
+3. **Independent equivalence/performance:** qualify the actual same
+   movement/hierarchy/event and invoice applications on immutable Bevy and
+   RunenECS public revisions. Measure developer-authored domain and glue
+   code separately, exact results/errors and both full transaction and
+   propagation-only release times, including dense and sparse workloads.
+4. **GO / PIVOT / REJECT:** recommend adoption only if it improves
+   developer comprehension and correctness with a plausible scalable
+   execution implementation. Otherwise retain the useful isolated
+   combinators or reject the universal API ambition.
+
+**Disposition:** complete PR #16, accepted-base→head assurance,
+framework adoption and the Engineering #146 decision remain **HOLD**.
+No production Runenwerk/RunenECS semantics are changed by these tests.
