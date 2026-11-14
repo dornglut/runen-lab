@@ -272,3 +272,27 @@ fn multiple_absolute_puts_currently_have_implicit_last_writer_wins() -> Result<(
     assert_eq!(app.get::<HealthPercent>(key), Some(HealthPercent(90)));
     Ok(())
 }
+
+#[test]
+fn forgotten_guard_can_silently_discard_an_edit() -> Result<(), Error> {
+    let mut app = game()?;
+    let key = Key::new(5, 1);
+    seed(&mut app, key)?;
+
+    app.transact(|tx| {
+        let mut edit = tx.edit::<Health>(key)?.ok_or(Error::MissingEntity)?;
+        edit.0 = 0;
+
+        // Safe Rust can suppress Drop. The proposed edit guard is therefore
+        // not sufficient to guarantee a requested write was actually staged.
+        std::mem::forget(edit);
+        assert_eq!(tx.get::<Health>(key), Some(Health(100)));
+        Ok(())
+    })?;
+
+    assert_eq!(app.get::<Health>(key), Some(Health(100)));
+    assert_eq!(app.get::<Dead>(key), Some(Dead(false)));
+    assert!(app.occurrences::<Died>().is_empty());
+    assert!(app.pending_effects::<PlaySound>().is_empty());
+    Ok(())
+}
