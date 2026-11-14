@@ -72,9 +72,7 @@ fn invoice_engine() -> Result<Engine, Error> {
         let mut total = 0_i64;
         for (line_key, line) in cx.all::<Line>()? {
             if line.invoice == key {
-                let amount = amounts
-                    .get(&line_key)
-                    .ok_or(Error::InvalidRelationship)?;
+                let amount = amounts.get(&line_key).ok_or(Error::InvalidRelationship)?;
                 total = total.checked_add(amount.0).ok_or(Error::Overflow)?;
             }
         }
@@ -88,9 +86,7 @@ fn invoice_engine() -> Result<Engine, Error> {
                 let total = cx
                     .get::<InvoiceTotal>(key)?
                     .ok_or(Error::InvalidRelationship)?;
-                outstanding = outstanding
-                    .checked_add(total.0)
-                    .ok_or(Error::Overflow)?;
+                outstanding = outstanding.checked_add(total.0).ok_or(Error::Overflow)?;
             }
         }
         Ok(Some(OpenBalance(outstanding)))
@@ -120,11 +116,44 @@ fn seed(app: &mut Engine) -> Result<(), Error> {
         for key in [A, B, L1, L2, L3] {
             tx.spawn(key)?;
         }
-        tx.put(A, Invoice { due: 11, paid: false })?;
-        tx.put(B, Invoice { due: 14, paid: false })?;
-        tx.put(L1, Line { invoice: A, price: 10, quantity: 2 })?;
-        tx.put(L2, Line { invoice: A, price: 4, quantity: 3 })?;
-        tx.put(L3, Line { invoice: B, price: 6, quantity: 5 })?;
+        tx.put(
+            A,
+            Invoice {
+                due: 11,
+                paid: false,
+            },
+        )?;
+        tx.put(
+            B,
+            Invoice {
+                due: 14,
+                paid: false,
+            },
+        )?;
+        tx.put(
+            L1,
+            Line {
+                invoice: A,
+                price: 10,
+                quantity: 2,
+            },
+        )?;
+        tx.put(
+            L2,
+            Line {
+                invoice: A,
+                price: 4,
+                quantity: 3,
+            },
+        )?;
+        tx.put(
+            L3,
+            Line {
+                invoice: B,
+                price: 6,
+                quantity: 5,
+            },
+        )?;
         tx.put_singleton(Day(10))
     })
 }
@@ -141,11 +170,29 @@ fn complete_invoice_workload_needs_no_global_entity_and_preserves_rollback() -> 
     assert!(app.occurrences::<Reminder>().is_empty());
     assert!(app.pending_effects::<ReminderRequest>().is_empty());
 
-    app.transact(|tx| tx.put(L1, Line { invoice: A, price: 10, quantity: 4 }))?;
+    app.transact(|tx| {
+        tx.put(
+            L1,
+            Line {
+                invoice: A,
+                price: 10,
+                quantity: 4,
+            },
+        )
+    })?;
     assert_eq!(app.get::<InvoiceTotal>(A), Some(InvoiceTotal(52)));
     assert_eq!(app.singleton::<OpenBalance>(), Some(OpenBalance(82)));
 
-    app.transact(|tx| tx.put(L2, Line { invoice: B, price: 4, quantity: 3 }))?;
+    app.transact(|tx| {
+        tx.put(
+            L2,
+            Line {
+                invoice: B,
+                price: 4,
+                quantity: 3,
+            },
+        )
+    })?;
     assert_eq!(app.get::<InvoiceTotal>(A), Some(InvoiceTotal(40)));
     assert_eq!(app.get::<InvoiceTotal>(B), Some(InvoiceTotal(42)));
     assert_eq!(app.singleton::<OpenBalance>(), Some(OpenBalance(82)));
@@ -156,16 +203,35 @@ fn complete_invoice_workload_needs_no_global_entity_and_preserves_rollback() -> 
     let reminder = app.occurrences::<Reminder>();
     assert_eq!(reminder.len(), 1);
     assert_eq!(reminder[0].source, EventOrigin::Key(A));
-    assert_eq!(reminder[0].value, Reminder { invoice: A, day: 12 });
+    assert_eq!(
+        reminder[0].value,
+        Reminder {
+            invoice: A,
+            day: 12
+        }
+    );
     let staged = app.pending_effects::<ReminderRequest>();
     assert_eq!(staged.len(), 1);
-    assert_eq!(staged[0].value, ReminderRequest { invoice: A, day: 12 });
+    assert_eq!(
+        staged[0].value,
+        ReminderRequest {
+            invoice: A,
+            day: 12
+        }
+    );
     assert_eq!(staged[0].origin, EventOrigin::Key(A));
 
     // A rejected line arithmetic edit does not change any published data,
     // and it cannot replace the last successful commit's event snapshot.
     assert_eq!(
-        app.transact(|tx| tx.put(L1, Line { invoice: A, price: i64::MAX, quantity: 4 })),
+        app.transact(|tx| tx.put(
+            L1,
+            Line {
+                invoice: A,
+                price: i64::MAX,
+                quantity: 4
+            }
+        )),
         Err(Error::Overflow)
     );
     assert_eq!(app.get::<InvoiceTotal>(A), Some(InvoiceTotal(40)));
@@ -175,11 +241,14 @@ fn complete_invoice_workload_needs_no_global_entity_and_preserves_rollback() -> 
 
     // Missing relationship authority rejects the complete transaction too.
     assert_eq!(
-        app.transact(|tx| tx.put(L3, Line {
-            invoice: Key::new(100, 1),
-            price: 6,
-            quantity: 5,
-        })),
+        app.transact(|tx| tx.put(
+            L3,
+            Line {
+                invoice: Key::new(100, 1),
+                price: 6,
+                quantity: 5,
+            }
+        )),
         Err(Error::InvalidRelationship)
     );
     assert_eq!(app.get::<InvoiceTotal>(B), Some(InvoiceTotal(42)));
@@ -192,10 +261,24 @@ fn complete_invoice_workload_needs_no_global_entity_and_preserves_rollback() -> 
 
     app.transact(|tx| tx.put_singleton(Day(15)))?;
     assert_eq!(app.get::<Overdue>(B), Some(Overdue(true)));
-    assert_eq!(app.occurrences::<Reminder>()[0].value, Reminder { invoice: B, day: 15 });
+    assert_eq!(
+        app.occurrences::<Reminder>()[0].value,
+        Reminder {
+            invoice: B,
+            day: 15
+        }
+    );
     assert_eq!(app.pending_effects::<ReminderRequest>().len(), 1);
 
-    app.transact(|tx| tx.put(A, Invoice { due: 11, paid: true }))?;
+    app.transact(|tx| {
+        tx.put(
+            A,
+            Invoice {
+                due: 11,
+                paid: true,
+            },
+        )
+    })?;
     assert_eq!(app.singleton::<OpenBalance>(), Some(OpenBalance(42)));
     assert_eq!(app.get::<Overdue>(A), Some(Overdue(false)));
     app.transact(|tx| tx.remove::<Line>(L3))?;
@@ -258,11 +341,7 @@ fn grouped_and_global_amounts_match_independent_48_step_reference() -> Result<()
         } else {
             None
         };
-        let next_day = if step % 6 == 0 {
-            Some(day + 1)
-        } else {
-            None
-        };
+        let next_day = if step % 6 == 0 { Some(day + 1) } else { None };
 
         app.transact(|tx| {
             match new_line {
