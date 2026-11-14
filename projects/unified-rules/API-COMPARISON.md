@@ -328,7 +328,7 @@ scenario*, **not** a complete frontend comparison. The C test still relies
 on `RuleCx` for every domain, performs O(total lines × invoices) repeated
 collection scans on affected invoices, and carries explicit input and
 outbox management. The game workload still uses the older `rule::<T>`
-surface. The approximately 70-line engine configuration span excludes
+surface. The 66-line engine configuration span (lines 47–112) excludes
 types, fixtures, assertions and external effect execution; do not compare
 that number against Bevy source LOC or call it a productivity win.
 

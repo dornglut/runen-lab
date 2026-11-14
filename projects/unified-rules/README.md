@@ -280,9 +280,11 @@ app-specific scheduler, custom dependency graph, or duplicate engine source
 is needed. A second test compares grouped/global results and overdue state
 against separately calculated values across 48 deterministic edits.
 
-**Source-structure evidence:** The file contains approximately 325 lines,
+**Source-structure evidence (formatted exact source):** The file contains
+403 non-terminating lines (404 split lines including its final newline),
 including data types, test fixtures, two tests and independent reference
-calculations; the engine-building function occupies about 70 lines. These
+calculations; the `invoice_engine` function and spacing before `seed` occupy
+66 lines (lines 47–112). These
 are **not** comparable figures for complete Bevy/RunenECS applications.
 The same user-visible API across the *full game consumer* is **not yet
 proven**: `tests/consumer.rs` still uses the older per-key `engine.rule`
