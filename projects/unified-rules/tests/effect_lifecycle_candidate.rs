@@ -705,7 +705,10 @@ fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Erro
     assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
     assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
     let first_cancel = pending(&engine, ticket(A, 4), CommandKind::Cancel);
-    assert_eq!(executor.submit(&mut engine, first_cancel)?, Decision::Applied);
+    assert_eq!(
+        executor.submit(&mut engine, first_cancel)?,
+        Decision::Applied
+    );
     assert_eq!(
         executor.report(
             &mut engine,
@@ -741,7 +744,10 @@ fn accepted_cancellation_retires_start_without_waiting_for_late_completion() -> 
     assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
     assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
     let cancellation = pending(&engine, ticket(A, 4), CommandKind::Cancel);
-    assert_eq!(executor.submit(&mut engine, cancellation)?, Decision::Applied);
+    assert_eq!(
+        executor.submit(&mut engine, cancellation)?,
+        Decision::Applied
+    );
     assert_eq!(
         executor.report(
             &mut engine,
