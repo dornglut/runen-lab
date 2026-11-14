@@ -41,7 +41,10 @@ fn integrate(mut bodies: Query<(&mut Position, &Velocity)>, dt: Res<DeltaTime>) 
     }
 }
 
-fn observe_changes(mut positions: Query<&Position, Changed<Position>>, mut log: ResMut<ObservedChanges>) {
+fn observe_changes(
+    mut positions: Query<&Position, Changed<Position>>,
+    mut log: ResMut<ObservedChanges>,
+) {
     log.0.push(positions.iter().count());
 }
 
@@ -49,10 +52,7 @@ fn make_world() -> Result<(World, Entity, Entity), Box<dyn std::error::Error>> {
     let mut world = World::new();
     world.insert_resource(DeltaTime(0.5));
     world.insert_resource(ObservedChanges::default());
-    let moving = world.spawn((
-        Position { x: 1.0, y: 2.0 },
-        Velocity { x: 3.0, y: -2.0 },
-    ))?;
+    let moving = world.spawn((Position { x: 1.0, y: 2.0 }, Velocity { x: 3.0, y: -2.0 }))?;
     let static_payload = world.spawn((
         Position { x: 10.0, y: -10.0 },
         NonClonePayload(vec![7; 256]),
@@ -73,8 +73,8 @@ fn runen_runtime() -> Result<Runtime, Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn accepted_ecs_supports_non_eq_float_and_non_clone_payload_with_borrowed_queries(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn accepted_ecs_supports_non_eq_float_and_non_clone_payload_with_borrowed_queries()
+-> Result<(), Box<dyn std::error::Error>> {
     let (mut world, moving, static_payload) = make_world()?;
     let mut runtime = runen_runtime()?;
 
@@ -86,11 +86,17 @@ fn accepted_ecs_supports_non_eq_float_and_non_clone_payload_with_borrowed_querie
     // Query returns references into the authoritative ECS World. No cloned
     // Position or Velocity is required; query selection is structural.
     let query = world.query::<(Entity, &Position)>();
-    let found: Vec<_> = query.iter(&world).map(|(entity, position)| (entity, position.x)).collect();
+    let found: Vec<_> = query
+        .iter(&world)
+        .map(|(entity, position)| (entity, position.x))
+        .collect();
     assert_eq!(found.len(), 2);
     assert!(found.contains(&(moving, 2.5)));
     assert!(found.contains(&(static_payload, 10.0)));
-    assert_eq!(world.require::<NonClonePayload>(static_payload)?.0.len(), 256);
+    assert_eq!(
+        world.require::<NonClonePayload>(static_payload)?.0.len(),
+        256
+    );
     assert_eq!(world.resource::<ObservedChanges>()?.0, vec![2]);
 
     // The public change filter is a conservative record of mutable access,
@@ -102,7 +108,10 @@ fn accepted_ecs_supports_non_eq_float_and_non_clone_payload_with_borrowed_querie
 
     world.despawn(moving)?;
     assert!(world.entity(moving).is_err());
-    let next = world.spawn(Position { x: f32::NAN, y: 0.0 })?;
+    let next = world.spawn(Position {
+        x: f32::NAN,
+        y: 0.0,
+    })?;
     assert!(world.entity(next).is_ok());
     assert!(world.entity(moving).is_err());
     assert!(world.require::<Position>(next)?.x.is_nan());
@@ -110,8 +119,8 @@ fn accepted_ecs_supports_non_eq_float_and_non_clone_payload_with_borrowed_querie
 }
 
 #[test]
-fn float_input_remains_a_valid_ecs_component_without_equality_or_clone(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn float_input_remains_a_valid_ecs_component_without_equality_or_clone()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut world = World::new();
     let entity = world.spawn(Position {
         x: f32::NAN,
