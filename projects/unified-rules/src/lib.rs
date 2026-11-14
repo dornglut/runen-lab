@@ -37,6 +37,7 @@ pub enum Error {
     ConflictingWrite,
     EventStorm,
     ClockMutationDuringAdmission,
+    UnstableDerivedFeedback,
 }
 
 trait Column {
@@ -540,6 +541,50 @@ impl Task {
         }
     }
 }
+/// Current state invalidation uses one generic, output-type-aware expansion.
+fn invalidated_by(
+    changed: &HashSet<Fact>,
+    reverse: &HashMap<Fact, BTreeSet<Task>>,
+    rules: &[Rule],
+) -> BTreeSet<Task> {
+    let mut invalidated = BTreeSet::new();
+    let mut queue: VecDeque<Fact> = changed.iter().copied().collect();
+    let mut observed = HashSet::new();
+    while let Some(fact) = queue.pop_front() {
+        if !observed.insert(fact) {
+            continue;
+        }
+        if let Some(dependents) = reverse.get(&fact) {
+            for &task in dependents {
+                if invalidated.insert(task) {
+                    let output = rules[task.rule].output;
+                    match task.at {
+                        TaskAt::Key(key) => {
+                            queue.push_back(Fact::keyed(output, key));
+                            queue.push_back(Fact::collection_type(output));
+                        }
+                        TaskAt::Singleton => queue.push_back(Fact::singleton_type(output)),
+                    }
+                }
+            }
+        }
+    }
+    invalidated
+}
+
+/// Rebuild the currently observed inverse edges. Correctness-first, O(graph).
+fn reverse_for(
+    dependencies: &HashMap<Task, HashSet<Fact>>,
+) -> HashMap<Fact, BTreeSet<Task>> {
+    let mut reverse: HashMap<Fact, BTreeSet<Task>> = HashMap::new();
+    for (&task, reads) in dependencies {
+        for &fact in reads {
+            reverse.entry(fact).or_default().insert(task);
+        }
+    }
+    reverse
+}
+
 type RuleFn = dyn for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, TaskAt) -> Result<(), Error>;
 struct Rule {
     output: TypeId,
@@ -626,6 +671,11 @@ struct Evaluator<'r> {
     requests: Vec<StagedRequest>,
     incoming: VecDeque<IncomingEvent>,
     source_changes: HashSet<Fact>,
+    event_changes: HashSet<Fact>,
+    event_rules: &'r [EventRule],
+    dispatch_sequence: usize,
+    effectful_derived: BTreeSet<Task>,
+    evaluations_run: usize,
     event_phase: bool,
     current_writer: Option<(usize, usize)>,
     write_claims: HashMap<Fact, ((usize, usize), MutationKind)>,
@@ -678,12 +728,12 @@ impl Evaluator<'_> {
     /// and the same RuleCx; activation order is intentionally phase-separated.
     /// Events are processed FIFO, then derived outputs run exactly once from
     /// the final admitted source snapshot.
-    fn dispatch_events(&mut self, handlers: &[EventRule]) -> Result<(), Error> {
+    fn dispatch_events(&mut self) -> Result<(), Error> {
         const MAX_EVENTS: usize = 4096; // Bounded research guard, not a production capacity claim.
         self.event_phase = true;
-        let mut sequence = 0usize;
+        let handlers = self.event_rules;
         while let Some(event) = self.incoming.pop_front() {
-            if sequence >= MAX_EVENTS {
+            if self.dispatch_sequence >= MAX_EVENTS {
                 return Err(Error::EventStorm);
             }
             for (index, handler) in handlers.iter().enumerate() {
@@ -691,7 +741,7 @@ impl Evaluator<'_> {
                     continue;
                 }
                 let f = Rc::clone(&handler.evaluate);
-                self.current_writer = Some((sequence, index));
+                self.current_writer = Some((self.dispatch_sequence, index));
                 let mut reads = HashSet::new();
                 let task =
                     Task::singleton(self.rules.len().checked_add(index).ok_or(Error::Overflow)?);
@@ -708,7 +758,7 @@ impl Evaluator<'_> {
                 self.current_writer = None;
                 result?;
             }
-            sequence += 1;
+            self.dispatch_sequence += 1;
         }
         self.event_phase = false;
         Ok(())
@@ -720,6 +770,11 @@ impl Evaluator<'_> {
             || self.done.contains(&task)
         {
             return Ok(());
+        }
+        if self.effectful_derived.contains(&task) {
+            // A rule's earlier occurrence/request has already participated in
+            // this proposed transaction. Replaying it is not semantically safe.
+            return Err(Error::UnstableDerivedFeedback);
         }
         if !self.visiting.insert(task) {
             return Err(Error::RuleCycle);
@@ -738,6 +793,7 @@ impl Evaluator<'_> {
         );
         self.visiting.remove(&task);
         outcome?;
+        self.evaluations_run = self.evaluations_run.checked_add(1).ok_or(Error::Overflow)?;
         self.dependencies.insert(task, reads);
         self.done.insert(task);
         Ok(())
@@ -761,7 +817,7 @@ impl RuleCx<'_, '_> {
         }
         Ok(Transaction {
             world: &mut self.evaluator.world,
-            changed: &mut self.evaluator.source_changes,
+            changed: &mut self.evaluator.event_changes,
             outputs: self.evaluator.by_type,
             incoming: &mut self.evaluator.incoming,
             events: &mut self.evaluator.events,
@@ -966,7 +1022,16 @@ impl RuleCx<'_, '_> {
     pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
         let ordinal = self.next_ordinal;
         self.next_ordinal = self.next_ordinal.checked_add(1).ok_or(Error::Overflow)?;
-        if self.evaluator.event_phase {
+        if !self.evaluator.event_phase {
+            self.evaluator.effectful_derived.insert(self.task);
+        }
+        if self.evaluator.event_phase
+            || self
+                .evaluator
+                .event_rules
+                .iter()
+                .any(|handler| handler.ty == TypeId::of::<T>())
+        {
             self.evaluator.incoming.push_back(IncomingEvent {
                 ty: TypeId::of::<T>(),
                 value: Box::new(value.clone()),
@@ -992,6 +1057,9 @@ impl RuleCx<'_, '_> {
             .next_request_ordinal
             .checked_add(1)
             .ok_or(Error::Overflow)?;
+        if !self.evaluator.event_phase {
+            self.evaluator.effectful_derived.insert(self.task);
+        }
         self.evaluator.requests.push(StagedRequest {
             source: self.task,
             ordinal,
@@ -1053,7 +1121,8 @@ impl Engine {
                 return Err(Error::ScopeMismatch);
             }
             let value = f(cx)?;
-            let previous = cx.evaluator.world.singleton::<T>();
+            let previous = cx.evaluator.previous.singleton::<T>();
+            let fact = Fact::singleton::<T>();
             if previous != value {
                 let kind = match (previous.is_some(), value.is_some()) {
                     (false, true) => ChangeKind::Added,
@@ -1061,8 +1130,9 @@ impl Engine {
                     (true, false) => ChangeKind::Removed,
                     (false, false) => unreachable!("unequal missing values"),
                 };
-                let fact = Fact::singleton::<T>();
                 cx.evaluator.output_changes.insert(fact, kind);
+            } else {
+                cx.evaluator.output_changes.remove(&fact);
             }
             cx.evaluator.world.set_singleton::<T>(value);
             Ok(())
@@ -1167,7 +1237,8 @@ impl Engine {
                 return Err(Error::ScopeMismatch);
             };
             let value = f(ctx, key)?;
-            let previously = ctx.evaluator.world.get::<T>(key);
+            let previously = ctx.evaluator.previous.get::<T>(key);
+            let fact = Fact::of::<T>(key);
             if previously != value {
                 let kind = match (previously.is_some(), value.is_some()) {
                     (false, true) => ChangeKind::Added,
@@ -1175,11 +1246,15 @@ impl Engine {
                     (true, false) => ChangeKind::Removed,
                     (false, false) => unreachable!("unequal missing values"),
                 };
-                let fact = Fact::of::<T>(key);
                 if kind == ChangeKind::Added {
                     ctx.evaluator.insertions.insert(fact);
+                } else {
+                    ctx.evaluator.insertions.remove(&fact);
                 }
                 ctx.evaluator.output_changes.insert(fact, kind);
+            } else {
+                ctx.evaluator.insertions.remove(&fact);
+                ctx.evaluator.output_changes.remove(&fact);
             }
             ctx.evaluator.world.set::<T>(key, value);
             Ok(())
@@ -1351,6 +1426,11 @@ impl Engine {
             requests: Vec::new(),
             incoming,
             source_changes: changes,
+            event_changes: HashSet::new(),
+            event_rules: &self.event_rules,
+            dispatch_sequence: 0,
+            effectful_derived: BTreeSet::new(),
+            evaluations_run: 0,
             event_phase: false,
             current_writer: None,
             write_claims: HashMap::new(),
@@ -1364,7 +1444,10 @@ impl Engine {
 
         // All occurrence handlers run against staged sources before derived
         // evaluation. Their mutations are validated and published together.
-        evaluator.dispatch_events(&self.event_rules)?;
+        evaluator.dispatch_events()?;
+        evaluator
+            .source_changes
+            .extend(std::mem::take(&mut evaluator.event_changes));
         for clock in &self.clocks {
             (clock.validate)(&self.world, &evaluator.world)?;
         }
@@ -1394,30 +1477,7 @@ impl Engine {
         // The old dependency graph determines which tasks must be invalidated.
         // A derived output's invalidation is propagated transitively, before
         // evaluating any rule, even when its next value proves unchanged.
-        let mut invalidated = BTreeSet::new();
-        let mut queue: VecDeque<Fact> = changes.iter().copied().collect();
-        let mut observed = HashSet::new();
-        while let Some(fact) = queue.pop_front() {
-            if !observed.insert(fact) {
-                continue;
-            }
-            if let Some(dependents) = self.reverse.get(&fact) {
-                for &task in dependents {
-                    if invalidated.insert(task) {
-                        let output = self.rules[task.rule].output;
-                        match task.at {
-                            TaskAt::Key(key) => {
-                                queue.push_back(Fact::keyed(output, key));
-                                queue.push_back(Fact::collection_type(output));
-                            }
-                            TaskAt::Singleton => {
-                                queue.push_back(Fact::singleton_type(output));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let mut invalidated = invalidated_by(&changes, &self.reverse, &self.rules);
         for &key in proposed.live.values() {
             if !self.world.contains(key) {
                 for (rule, spec) in self.rules.iter().enumerate() {
@@ -1441,7 +1501,79 @@ impl Engine {
         for task in tasks {
             evaluator.evaluate(task)?;
         }
-        for key in removed_keys {
+
+        // Route derived occurrences after initial calculation. Handlers can
+        // change sources, and only the affected derived tasks are re-evaluated.
+        // A derived callback that has already emitted/requested may not replay:
+        // its previous outward action would otherwise be tentative or duplicated.
+        // The entire transaction fails closed on such unstable feedback.
+        const MAX_FEEDBACK_WAVES: usize = 32;
+        let mut wave = 0;
+        while !evaluator.incoming.is_empty() {
+            if wave >= MAX_FEEDBACK_WAVES {
+                return Err(Error::EventStorm);
+            }
+            wave += 1;
+            let before_keys: BTreeSet<Key> = evaluator.world.live.values().copied().collect();
+            evaluator.dispatch_events()?;
+            let mut dirty = std::mem::take(&mut evaluator.event_changes);
+            if dirty.is_empty() {
+                continue;
+            }
+            evaluator.source_changes.extend(dirty.iter().copied());
+
+            let new_keys: Vec<_> = evaluator
+                .world
+                .live
+                .values()
+                .copied()
+                .filter(|key| !before_keys.contains(key))
+                .collect();
+            let disappeared = before_keys
+                .iter()
+                .any(|key| !evaluator.world.contains(*key));
+            if disappeared || !new_keys.is_empty() {
+                for rule in &self.rules {
+                    dirty.insert(Fact::collection_type(rule.output));
+                }
+            }
+
+            // The old graph covers untouched tasks, and this transaction's
+            // evaluated dependencies replace their older read sets.
+            let mut current_deps = self.dependencies.clone();
+            current_deps.extend(
+                evaluator
+                    .dependencies
+                    .iter()
+                    .map(|(&task, reads)| (task, reads.clone())),
+            );
+            let current_reverse = reverse_for(&current_deps);
+            let mut rerun = invalidated_by(&dirty, &current_reverse, &self.rules);
+            for key in new_keys {
+                for (rule, spec) in self.rules.iter().enumerate() {
+                    if !spec.singleton {
+                        rerun.insert(Task::key(rule, key));
+                    }
+                }
+            }
+            for task in &rerun {
+                evaluator.done.remove(task);
+            }
+            evaluator.invalidated.extend(rerun.iter().copied());
+            for task in rerun {
+                evaluator.evaluate(task)?;
+            }
+        }
+
+        // Feedback handlers can despawn committed keys after the first
+        // derivation pass; account for those removals as well as initial ones.
+        for key in self
+            .world
+            .live
+            .values()
+            .copied()
+            .filter(|&key| !evaluator.world.contains(key))
+        {
             for rule in &self.rules {
                 if self
                     .world
@@ -1455,7 +1587,7 @@ impl Engine {
                 }
             }
         }
-        let evaluations = evaluator.done.len();
+        let evaluations = evaluator.evaluations_run;
         let mut dependencies = self.dependencies.clone();
         dependencies.retain(|task, _| match task.at {
             TaskAt::Key(key) => evaluator.world.contains(key),
@@ -1468,12 +1600,7 @@ impl Engine {
 
         // Correct but intentionally expensive: whole graph re-indexed per
         // successful transaction. Not a scalable O(changes) implementation.
-        let mut reverse: HashMap<Fact, BTreeSet<Task>> = HashMap::new();
-        for (&task, reads) in &dependencies {
-            for &fact in reads {
-                reverse.entry(fact).or_default().insert(task);
-            }
-        }
+        let reverse = reverse_for(&dependencies);
         // Move the staged results out of the evaluator before replacing
         // the prior World it borrowed for temporal reads.
         let Evaluator {
