@@ -603,8 +603,8 @@ fn analog_damage(hit: &AnalogHit, health: &mut Health) -> Result<(), Error> {
 }
 
 #[test]
-fn ordinary_event_function_accepts_non_eq_payload_and_rolls_back_invalid_value()
--> Result<(), Error> {
+fn ordinary_event_function_accepts_non_eq_payload_and_rolls_back_invalid_value() -> Result<(), Error>
+{
     let mut app = Engine::new();
     app.register(analog_damage)?;
     let target = Key::new(33, 1);
