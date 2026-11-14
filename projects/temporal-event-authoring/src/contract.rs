@@ -45,9 +45,21 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn check(&self, case: &Case, backend: &str) {
-        assert_eq!(self.health, case.expected.health, "{backend}: health at tick {}", case.tick);
-        assert_eq!(self.receipts, case.expected.receipts, "{backend}: hit order at tick {}", case.tick);
-        assert_eq!(self.deaths, case.expected.deaths, "{backend}: death delivery at tick {}", case.tick);
-        assert_eq!(self.second_consumer_deaths, case.expected.deaths, "{backend}: second subscriber at tick {}", case.tick);
+        assert_eq!(
+            self.health, case.expected.health,
+            "{backend}: health at tick {}", case.tick
+        );
+        assert_eq!(
+            self.receipts, case.expected.receipts,
+            "{backend}: hit order at tick {}", case.tick
+        );
+        assert_eq!(
+            self.deaths, case.expected.deaths,
+            "{backend}: death delivery at tick {}", case.tick
+        );
+        assert_eq!(
+            self.second_consumer_deaths, case.expected.deaths,
+            "{backend}: second subscriber at tick {}", case.tick
+        );
     }
 }

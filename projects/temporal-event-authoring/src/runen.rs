@@ -31,6 +31,12 @@ struct LogicalTick;
 #[derive(SystemSet)]
 struct ApplyStage;
 
+#[derive(SystemSet)]
+struct FirstDelivery;
+
+#[derive(SystemSet)]
+struct SecondDelivery;
+
 fn apply_hits(
     mut hits: ResMut<Incoming>,
     mut health: Query<&mut Health>,
@@ -52,12 +58,18 @@ fn apply_hits(
     }
 }
 
-// Explicit, application-owned fanout. Two consumers are not native RunenECS subscribers.
-fn publish_deaths(mut pending: ResMut<PendingDeaths>, mut results: ResMut<Results>) {
-    for death in std::mem::take(&mut pending.0) {
-        results.deaths.push(death);
-        results.second_deaths.push(death);
-    }
+// Two independent scheduled consumers inspect one app-owned, tick-scoped queue.
+fn observe_deaths(pending: Res<PendingDeaths>, mut results: ResMut<Results>) {
+    results.deaths.extend(pending.0.iter().copied());
+}
+
+fn audit_deaths(pending: Res<PendingDeaths>, mut results: ResMut<Results>) {
+    results.second_deaths.extend(pending.0.iter().copied());
+}
+
+// Explicit retention policy; without it the same occurrences would replay next tick.
+fn clear_deaths(mut pending: ResMut<PendingDeaths>) {
+    pending.0.clear();
 }
 
 pub struct Backend {
@@ -78,10 +90,15 @@ impl Backend {
         world.despawn(stale).expect("despawn stale entity");
         let mut runtime = Runtime::new();
         runtime
-            .add_systems(LogicalTick, (
-                apply_hits.in_set(ApplyStage),
-                publish_deaths.after(ApplyStage),
-            ))
+            .add_systems(
+                LogicalTick,
+                (
+                    apply_hits.in_set(ApplyStage),
+                    observe_deaths.in_set(FirstDelivery).after(ApplyStage),
+                    audit_deaths.in_set(SecondDelivery).after(FirstDelivery),
+                    clear_deaths.after(SecondDelivery),
+                ),
+            )
             .expect("valid sequential publication schedule");
         Self { world, runtime, live, stale }
     }
@@ -92,14 +109,24 @@ impl Backend {
                 Target::Live => self.live,
                 Target::Stale => self.stale,
             };
-            self.world.resource_mut::<Incoming>().expect("incoming").0.push(Hit {
+            self.world
+                .resource_mut::<Incoming>()
+                .expect("incoming")
+                .0
+                .push(Hit {
                 target,
                 damage: hit.damage,
                 tick: case.tick,
             });
         }
-        self.runtime.run_schedule::<LogicalTick>(&mut self.world).expect("execute logical tick");
-        let health = self.world.require::<Health>(self.live).expect("live target").0;
+        self.runtime
+            .run_schedule::<LogicalTick>(&mut self.world)
+            .expect("execute logical tick");
+        let health = self
+            .world
+            .require::<Health>(self.live)
+            .expect("live target")
+            .0;
         let results = self.world.resource_mut::<Results>().expect("results");
         Snapshot {
             health,

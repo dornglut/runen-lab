@@ -5,7 +5,7 @@ Research-only **source-equivalent behavior** comparison, not an accepted framewo
 Each runner uses native Bevy ECS 0.20.1 or pinned accepted RunenECS:
 - Bevy buffered `MessageReader`/`MessageWriter` systems, with two independent death readers.
 - Bevy `World::trigger` observers, with two independent death observers.
-- RunenECS scheduled systems, with an **application-owned** input queue and explicit broadcast to two output consumers. RunenECS supplies schedules and ECS storage, **not** this event API.
+- RunenECS scheduled systems, with an **application-owned** input queue, two independently scheduled death consumers, and explicit queue retirement. RunenECS supplies schedules and ECS storage, **not** this event API or its retention policy.
 
 All variants consume the same manually authored JSON oracle. Two ordered valid hits (4, 6) cross health 10 -> 0 in tick 1; an interleaved stale-entity hit is rejected individually. Tick 2 includes further valid/no-op and invalid hits; tick 3 is empty. Only the first health crossing emits a death occurrence. Both consumers must see the same death record exactly once and must not receive a replay.
 
