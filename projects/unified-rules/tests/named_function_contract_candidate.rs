@@ -27,9 +27,7 @@ where
     F: Fn(&A) -> O + 'static,
 {
     fn install(self, app: &mut Engine) -> Result<(), Error> {
-        app.compute::<Each<O>>(move |cx, key| {
-            Ok(cx.get::<A>(key)?.map(|value| self(&value)))
-        })
+        app.compute::<Each<O>>(move |cx, key| Ok(cx.get::<A>(key)?.map(|value| self(&value))))
     }
 }
 
