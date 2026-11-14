@@ -52,6 +52,7 @@ sessions = []
 all_events = 0
 all_m13 = 0
 committed_receipts = 0
+productive_m13_pumps = 0
 all_render = 0
 seen_ids = set()
 for path in outputs:
@@ -93,6 +94,8 @@ for path in outputs:
                     committed_receipts += 1
             if event["domain"] == "runenui_m13" and event["stage"] == "canonical_input_pump":
                 all_m13 += 1
+                if m13["processed_envelopes"] > 0:
+                    productive_m13_pumps += 1
     if set(data["render"]) != render_keys or any(
         set(observation) != render_observation_keys
         for observation in data["render"]["observations"]
@@ -126,8 +129,11 @@ interaction_status = (root / "interaction-exit.txt").read_text().strip()
 completed = all(s["status"] == "completed" for s in sessions)
 qualified = (
     resize_status == "0" and interaction_status == "0" and completed
-    and all_m13 > 0 and committed_receipts > 0 and all_render > 0
+    and all_m13 > 0 and productive_m13_pumps > 0
+    and committed_receipts > 0 and all_render > 0
     and any(e["cpu_events"] > 0 for e in sessions)
+    and any(e["capture"] == "resize.json" and e["status"] == "completed"
+            and e["render_observations"] > 0 for e in sessions)
 )
 summary = {
     "classification": "pass" if qualified else "hold",
@@ -140,6 +146,8 @@ summary = {
     "window_resize_script_exit": resize_status,
     "cpu_events": all_events,
     "original_m13_pumps": all_m13,
+    "productive_m13_pumps": productive_m13_pumps,
+    "resize_capture_present": (root / "resize.json").is_file(),
     "committed_m13_receipts_sampled": committed_receipts,
     "render_observations": all_render,
     "captures": sessions,

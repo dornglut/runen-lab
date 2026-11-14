@@ -79,3 +79,23 @@ for dimensions in 520x480 960x650 800x600; do
   kill -0 "$app_pid" 2>/dev/null || fail "app-exited-after-settle-$dimensions"
   echo "todo_native_resize=pass requested=$dimensions observed=${actual_width}x${actual_height} app_alive=true"
 done
+
+# Profiled proof needs an ordinary WM close so the real Engine exporter
+# can complete. Preserve the original resize-only behavior without opt-in.
+if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" ]]; then
+  xdotool windowfocus --sync "$window" || fail "profiled-resize-window-focus"
+  xdotool key --clearmodifiers Alt+F4 || fail "profiled-resize-wm-close"
+  for _ in $(seq 1 80); do
+    if ! kill -0 "$app_pid" 2>/dev/null; then
+      status=0
+      wait "$app_pid" || status=$?
+      app_pid=""
+      [[ "$status" -eq 0 ]] || fail "profiled-resize-close-exit-$status"
+      break
+    fi
+    sleep 0.2
+  done
+  [[ -z "$app_pid" ]] || fail "profiled-resize-close-timeout"
+  [[ -s "$RUNEN_LAB_TODO_PROFILE_ROOT/resize.json" ]] || fail "profiled-resize-no-capture"
+  echo "todo_native_resize=pass profile_capture=complete"
+fi
