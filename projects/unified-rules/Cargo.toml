@@ -1,0 +1,13 @@
+[package]
+name = "unified-rules"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[workspace]
+
+[dev-dependencies]
+runen-ecs = { git = "https://github.com/dornglut/runen-ecs", rev = "5d6af86bfa7c58f1ad26ec73635590a72e89ef37" }
