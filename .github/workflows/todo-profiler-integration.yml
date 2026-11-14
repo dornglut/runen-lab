@@ -88,6 +88,20 @@ jobs:
           test -s profiler-evidence/disposable-cargo-resolution.patch
           printf '%s\n' "$TODO_PROFILER_ENGINE_REV" > profiler-evidence/engine-revision.txt
 
+      # Keep dependency resolution separately reviewable even when native
+      # correctness journeys later HOLD; this file is not an accepted pin.
+      - name: Retain exact provisional Cargo resolution before native tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: todo-profiler-cli-cargo-resolution
+          path: |
+            profiler-evidence/provisional-Cargo.toml
+            profiler-evidence/provisional-Cargo.lock
+            profiler-evidence/disposable-cargo-resolution.patch
+            profiler-evidence/engine-revision.txt
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Compile unchanged actual Todo Release application and native target fixture
         run: |
           set -euo pipefail
