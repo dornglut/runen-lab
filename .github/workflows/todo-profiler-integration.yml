@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      TODO_PROFILER_ENGINE_REV: "dd011c92a09d780e2a3e77e1c1d72bb7f385e2f9"
-      RUNENWERK_SOURCE_REVISION: "dd011c92a09d780e2a3e77e1c1d72bb7f385e2f9"
+      TODO_PROFILER_ENGINE_REV: "c5ac69ead587bea6419955eaae036529889132ea"
+      RUNENWERK_SOURCE_REVISION: "c5ac69ead587bea6419955eaae036529889132ea"
       RUST_BACKTRACE: "1"
     steps:
       - name: Check out exact provisional Todo revision
@@ -82,6 +82,8 @@ jobs:
               raise SystemExit("disposable Cargo graph did not resolve exact profiled Engine source")
           print("todo_profiler_dependency=exact_candidate_verified")
           PY
+          cp projects/todo/Cargo.toml profiler-evidence/provisional-Cargo.toml
+          cp projects/todo/Cargo.lock profiler-evidence/provisional-Cargo.lock
           git diff -- projects/todo/Cargo.toml projects/todo/Cargo.lock > profiler-evidence/disposable-cargo-resolution.patch
           test -s profiler-evidence/disposable-cargo-resolution.patch
           printf '%s\n' "$TODO_PROFILER_ENGINE_REV" > profiler-evidence/engine-revision.txt
@@ -139,7 +141,7 @@ jobs:
           python3 tools/todo-profiler-qualification.py "$PWD/profiler-evidence/delayed" "$TODO_PROFILER_ENGINE_REV" --interaction-only
           (
             cd profiler-evidence
-            sha256sum -- *.json *.txt > SHA256SUMS
+            sha256sum -- *.json *.txt *.lock > SHA256SUMS
             sha256sum --check SHA256SUMS
           )
           (
