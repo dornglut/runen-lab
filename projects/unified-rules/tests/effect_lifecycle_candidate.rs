@@ -12,6 +12,7 @@ struct Intent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CancelRequested {
     revision: u64,
+    attempt: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,7 +54,7 @@ struct Noise(u32);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandKind {
     Start,
-    Cancel,
+    Cancel { attempt: u64 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,18 +110,18 @@ fn app() -> Result<Engine, Error> {
                 kind: CommandKind::Start,
             })?;
         }
-        if cx.changed::<CancelRequested>(key)?
-            == Some(CancelRequested {
-                revision: intent.revision,
-            })
-        {
-            cx.request(WorkCommand {
-                ticket: WorkTicket {
-                    key,
-                    revision: intent.revision,
-                },
-                kind: CommandKind::Cancel,
-            })?;
+        if let Some(request) = cx.changed::<CancelRequested>(key)? {
+            if request.revision == intent.revision {
+                cx.request(WorkCommand {
+                    ticket: WorkTicket {
+                        key,
+                        revision: intent.revision,
+                    },
+                    kind: CommandKind::Cancel {
+                        attempt: request.attempt,
+                    },
+                })?;
+            }
         }
         // Force a tracked but semantically irrelevant dependency to detect
         // repeated request generation on unrelated invalidation.
@@ -212,8 +213,17 @@ fn cancel(engine: &mut Engine, key: Key, revision: u64) -> Result<Decision, Erro
         }
         return Ok(Decision::Applied);
     }
+    // After CancelRejected the prior attempt remains recorded. A retry must
+    // advance its identity, not merely restore the CancelRequested phase.
+    let attempt = match engine.get::<CancelRequested>(key) {
+        Some(previous) if previous.revision == revision => previous
+            .attempt
+            .checked_add(1)
+            .ok_or(Error::Overflow)?,
+        _ => 1,
+    };
     engine.transact(|tx| {
-        tx.put(key, CancelRequested { revision })?;
+        tx.put(key, CancelRequested { revision, attempt })?;
         tx.put(
             key,
             Execution {
@@ -235,6 +245,17 @@ fn pending(engine: &Engine, ticket: WorkTicket, kind: CommandKind) -> EffectId {
 }
 
 impl FakeExecutor {
+    // This retires *in-memory bookkeeping* after a terminal report. It does
+    // not stop physical work or guarantee terminal reporter authenticity.
+    fn retire_ticket(&mut self, engine: &mut Engine, ticket: WorkTicket) {
+        for effect in engine.pending_effects::<WorkCommand>() {
+            if effect.value.ticket == ticket && effect.origin == EventOrigin::Key(ticket.key) {
+                engine.acknowledge_effect(effect.id);
+                self.in_flight.remove(&effect.id);
+            }
+        }
+    }
+
     fn submit(&mut self, engine: &mut Engine, id: EffectId) -> Result<Decision, Error> {
         let Some(effect) = engine
             .pending_effects::<WorkCommand>()
@@ -275,7 +296,13 @@ impl FakeExecutor {
                     )
                 })?;
             }
-            CommandKind::Cancel if state.phase == Phase::CancelRequested => {}
+            CommandKind::Cancel { attempt }
+                if state.phase == Phase::CancelRequested
+                    && engine.get::<CancelRequested>(request.ticket.key)
+                        == Some(CancelRequested {
+                            revision: request.ticket.revision,
+                            attempt,
+                        }) => {}
             _ => return Ok(Decision::Rejected),
         }
         self.in_flight.insert(id);
@@ -319,9 +346,20 @@ impl FakeExecutor {
             return Ok(Decision::Stale);
         }
         if current.phase.terminal() {
-            engine.acknowledge_effect(id);
-            self.in_flight.remove(&id);
+            self.retire_ticket(engine, ticket);
             return Ok(Decision::AlreadyTerminal);
+        }
+        if let CommandKind::Cancel { attempt } = kind {
+            if engine.get::<CancelRequested>(ticket.key)
+                != Some(CancelRequested {
+                    revision: ticket.revision,
+                    attempt,
+                })
+            {
+                engine.acknowledge_effect(id);
+                self.in_flight.remove(&id);
+                return Ok(Decision::Stale);
+            }
         }
         let next = match (kind, report, current.phase) {
             (
@@ -334,10 +372,10 @@ impl FakeExecutor {
                 TerminalReport::Failed,
                 Phase::Submitted | Phase::CancelRequested,
             ) => Phase::Failed,
-            (CommandKind::Cancel, TerminalReport::Cancelled, Phase::CancelRequested) => {
+            (CommandKind::Cancel { .. }, TerminalReport::Cancelled, Phase::CancelRequested) => {
                 Phase::Cancelled
             }
-            (CommandKind::Cancel, TerminalReport::CancelRejected, Phase::CancelRequested) => {
+            (CommandKind::Cancel { .. }, TerminalReport::CancelRejected, Phase::CancelRequested) => {
                 Phase::Submitted
             }
             _ => return Ok(Decision::Rejected),
@@ -354,8 +392,14 @@ impl FakeExecutor {
                 },
             )
         })?;
-        engine.acknowledge_effect(id);
-        self.in_flight.remove(&id);
+        if next.terminal() {
+            self.retire_ticket(engine, ticket);
+        } else {
+            // CancelRejected is nonterminal: only the rejected cancel attempt
+            // retires; the original Start remains pending.
+            engine.acknowledge_effect(id);
+            self.in_flight.remove(&id);
+        }
         Ok(Decision::Applied)
     }
 }
@@ -427,8 +471,8 @@ fn cancellation_race_completion_wins_or_cancel_wins() -> Result<(), Error> {
     executor.submit(&mut engine, start_b)?;
     assert_eq!(cancel(&mut engine, A, 1)?, Decision::Applied);
     assert_eq!(cancel(&mut engine, B, 1)?, Decision::Applied);
-    let cancel_a = pending(&engine, ticket(A, 1), CommandKind::Cancel);
-    let cancel_b = pending(&engine, ticket(B, 1), CommandKind::Cancel);
+    let cancel_a = pending(&engine, ticket(A, 1), CommandKind::Cancel { attempt: 1 });
+    let cancel_b = pending(&engine, ticket(B, 1), CommandKind::Cancel { attempt: 1 });
     executor.submit(&mut engine, cancel_a)?;
     executor.submit(&mut engine, cancel_b)?;
     assert_eq!(
@@ -447,7 +491,7 @@ fn cancellation_race_completion_wins_or_cancel_wins() -> Result<(), Error> {
             ticket(A, 1),
             TerminalReport::Cancelled
         )?,
-        Decision::AlreadyTerminal
+        Decision::NotPending
     );
     assert_eq!(phase(&engine, A), Some(Phase::Completed));
     assert_eq!(
@@ -466,7 +510,7 @@ fn cancellation_race_completion_wins_or_cancel_wins() -> Result<(), Error> {
             ticket(B, 1),
             TerminalReport::Completed
         )?,
-        Decision::AlreadyTerminal
+        Decision::NotPending
     );
     assert_eq!(phase(&engine, B), Some(Phase::Cancelled));
     assert!(engine.pending_effects::<WorkCommand>().is_empty());
@@ -481,7 +525,7 @@ fn cancel_rejected_then_original_operation_completes() -> Result<(), Error> {
     let id = pending(&engine, ticket(A, 5), CommandKind::Start);
     executor.submit(&mut engine, id)?;
     cancel(&mut engine, A, 5)?;
-    let cancel_id = pending(&engine, ticket(A, 5), CommandKind::Cancel);
+    let cancel_id = pending(&engine, ticket(A, 5), CommandKind::Cancel { attempt: 1 });
     executor.submit(&mut engine, cancel_id)?;
     assert_eq!(
         executor.report(
@@ -704,7 +748,7 @@ fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Erro
     let start = pending(&engine, ticket(A, 4), CommandKind::Start);
     assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
     assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
-    let first_cancel = pending(&engine, ticket(A, 4), CommandKind::Cancel);
+    let first_cancel = pending(&engine, ticket(A, 4), CommandKind::Cancel { attempt: 1 });
     assert_eq!(
         executor.submit(&mut engine, first_cancel)?,
         Decision::Applied
@@ -724,7 +768,7 @@ fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Erro
     let cancel_effects: Vec<_> = engine
         .pending_effects::<WorkCommand>()
         .into_iter()
-        .filter(|effect| effect.value.kind == CommandKind::Cancel)
+        .filter(|effect| matches!(effect.value.kind, CommandKind::Cancel { .. }))
         .collect();
     assert_eq!(
         cancel_effects.len(),
@@ -732,6 +776,26 @@ fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Erro
         "a second cancellation must stage a new command, not just change status"
     );
     assert_ne!(cancel_effects[0].id, first_cancel);
+    assert_eq!(
+        cancel_effects[0].value.kind,
+        CommandKind::Cancel { attempt: 2 }
+    );
+    let second_cancel = cancel_effects[0].id;
+    assert_eq!(
+        executor.submit(&mut engine, second_cancel)?,
+        Decision::Applied
+    );
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            second_cancel,
+            ticket(A, 4),
+            TerminalReport::Cancelled,
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(phase(&engine, A), Some(Phase::Cancelled));
+    assert!(engine.pending_effects::<WorkCommand>().is_empty());
     Ok(())
 }
 
@@ -743,7 +807,7 @@ fn accepted_cancellation_retires_start_without_waiting_for_late_completion() -> 
     let start = pending(&engine, ticket(A, 4), CommandKind::Start);
     assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
     assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
-    let cancellation = pending(&engine, ticket(A, 4), CommandKind::Cancel);
+    let cancellation = pending(&engine, ticket(A, 4), CommandKind::Cancel { attempt: 1 });
     assert_eq!(
         executor.submit(&mut engine, cancellation)?,
         Decision::Applied
