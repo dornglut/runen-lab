@@ -80,6 +80,8 @@ impl Backend {
                 tick: case.tick,
             });
         }
+        // A nested Commands::trigger is deferred; publish it before reading outcomes.
+        self.world.flush();
         let health = self.world.get::<Health>(self.live).expect("live target").0;
         let mut results = self.world.resource_mut::<Results>();
         Snapshot {
