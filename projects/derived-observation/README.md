@@ -10,7 +10,7 @@ Dependencies are Bevy ECS/App **0.20.1** and [RunenECS at accepted exact SHA 5d6
 
 ## Contracts qualified
 
-**A — current-state read:** Bevy and RunenECS native entity, component and relation storage is traversed directly. Two independent reads are checked after *every* edit attempt. These methods do not retain derived outputs or emit notifications, and repeated reads repeat computation.
+**A — current-state read:** separate native Bevy and RunenECS source-only Worlds store objects, material components and relationship edges but **no derived PacketComponent, Published resource, publisher system or derived cache**. Two independent queries are checked after *every* edit attempt; repeated reads repeat computation. Retained implementations also expose an independent computed read as a cross-check, but their existing caches are not used as the source-only application.
 
 **B — retained publication:** the existing Bevy and RunenECS systems maintain a Published resource. A deliberately straightforward full-recompute publisher separately retains output once per accepted batch and calculates value-difference deltas; rejected edits do not invoke it. No general incremental model is implemented.
 

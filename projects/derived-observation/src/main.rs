@@ -3,12 +3,14 @@
 mod bevy_backend;
 mod contract;
 mod runen_backend;
+mod uncached;
 
 use bevy_backend::BevyBackend;
 use contract::{
     Data, Expected, HeaderRow, Key, Packet, TraceCase, changed_packets, packet_digest, propose,
 };
 use runen_backend::RunenBackend;
+use uncached::{BevyReadOnly, RunenReadOnly};
 use std::collections::BTreeMap;
 
 /// Rebuilds the retained output after each admitted batch. This is a full-recompute control,
@@ -65,6 +67,8 @@ fn replay() -> Summary {
 
     let mut bevy = BevyBackend::new(&source);
     let mut runen = RunenBackend::new(&source);
+    let mut bevy_uncached = BevyReadOnly::new(&source);
+    let mut runen_uncached = RunenReadOnly::new(&source);
     let mut retained = FullRecomputePublication::new(&source);
 
     let mut accepted = 0;
@@ -93,6 +97,8 @@ fn replay() -> Summary {
                 assert!(expected_error.is_none());
                 bevy.apply(&source, &next.data, &next.dirty);
                 runen.apply(&source, &next.data, &next.dirty);
+                bevy_uncached.apply(&source, &next.data, &next.dirty);
+                runen_uncached.apply(&source, &next.data, &next.dirty);
                 publication = retained.accept(&next.data);
                 source = next.data;
                 epoch += 1;
@@ -132,21 +138,26 @@ fn replay() -> Summary {
             "full-recompute publisher at {index}"
         );
 
-        // Profile A: use each real native World for on-demand computation.
-        // Two queries are deliberately independent; neither emits change notifications.
+        // Profile A uses separate native Worlds with no derived cache or publisher.
+        // Both on-demand reads repeat the entire projection.
         for _ in 0..2 {
             assert_eq!(
-                bevy.computed_packets(),
+                bevy_uncached.packets(),
                 current,
-                "Bevy direct read at {index}"
+                "Bevy no-cache read at {index}"
             );
             assert_eq!(
-                runen.computed_packets(),
+                runen_uncached.packets(),
                 current,
-                "RunenECS direct read at {index}"
+                "RunenECS no-cache read at {index}"
             );
             direct_reads_per_backend += 1;
         }
+
+        // The retained implementation can also compute directly, independently
+        // of its Published resource. It is not counted as a no-cache application.
+        assert_eq!(bevy.computed_packets(), current);
+        assert_eq!(runen.computed_packets(), current);
 
         output_changes += changed.len();
         removals += removed.len();
@@ -169,7 +180,15 @@ fn replay() -> Summary {
 
 fn main() {
     let summary = replay();
-    println!("{summary:?}");
+    println!(
+        "accepted={} rejected={} changed={} removed={} direct_reads_per_backend={} full_refreshes={}",
+        summary.accepted,
+        summary.rejected,
+        summary.output_changes,
+        summary.removals,
+        summary.direct_reads_per_backend,
+        summary.full_refreshes
+    );
     println!(
         "Native computed reads recompute; retained publication refreshes once per accepted batch."
     );
