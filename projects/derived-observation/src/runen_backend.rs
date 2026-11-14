@@ -216,21 +216,28 @@ impl RunenBackend {
             .expect("schedule");
     }
 
-
     /// Direct read using native RunenECS objects and typed relation edges.
     pub fn computed_packets(&self) -> BTreeMap<Key, Packet> {
         let relations = self.world.relations::<BelongsTo>();
         self.objects
             .iter()
             .map(|(&slot, &entity)| {
-                let object = self.world.require::<ObjectRecord>(entity).expect("live object").obj;
+                let object = self
+                    .world
+                    .require::<ObjectRecord>(entity)
+                    .expect("live object")
+                    .obj;
                 let material = relations
                     .sources(entity)
                     .expect("live object relation")
                     .iter()
                     .next()
                     .expect("material for object");
-                let color = self.world.require::<MaterialColor>(material).expect("material").0;
+                let color = self
+                    .world
+                    .require::<MaterialColor>(material)
+                    .expect("material")
+                    .0;
                 (
                     Key {
                         slot,

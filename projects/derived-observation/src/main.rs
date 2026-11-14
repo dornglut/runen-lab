@@ -111,20 +111,40 @@ fn replay() -> Summary {
         assert_eq!(delta.0, changed, "changed identities at {index}");
         assert_eq!(delta.1, removed, "removed identities at {index}");
         assert_eq!(epoch, expected_epoch, "accepted epoch at {index}");
-        assert_eq!(source.source_digest(), source_digest, "source digest at {index}");
+        assert_eq!(
+            source.source_digest(),
+            source_digest,
+            "source digest at {index}"
+        );
         assert_eq!(packet_digest(&current), digest, "packet digest at {index}");
 
         assert_eq!(bevy.data(), source, "Bevy source at {index}");
         assert_eq!(runen.data(), source, "RunenECS source at {index}");
         assert_eq!(bevy.packets(), current, "Bevy retained packets at {index}");
-        assert_eq!(runen.packets(), current, "RunenECS retained packets at {index}");
-        assert_eq!(retained.read(), &current, "full-recompute publisher at {index}");
+        assert_eq!(
+            runen.packets(),
+            current,
+            "RunenECS retained packets at {index}"
+        );
+        assert_eq!(
+            retained.read(),
+            &current,
+            "full-recompute publisher at {index}"
+        );
 
         // Profile A: use each real native World for on-demand computation.
         // Two queries are deliberately independent; neither emits change notifications.
         for _ in 0..2 {
-            assert_eq!(bevy.computed_packets(), current, "Bevy direct read at {index}");
-            assert_eq!(runen.computed_packets(), current, "RunenECS direct read at {index}");
+            assert_eq!(
+                bevy.computed_packets(),
+                current,
+                "Bevy direct read at {index}"
+            );
+            assert_eq!(
+                runen.computed_packets(),
+                current,
+                "RunenECS direct read at {index}"
+            );
             direct_reads_per_backend += 1;
         }
 
@@ -150,7 +170,9 @@ fn replay() -> Summary {
 fn main() {
     let summary = replay();
     println!("{summary:?}");
-    println!("Native computed reads recompute; retained publication refreshes once per accepted batch.");
+    println!(
+        "Native computed reads recompute; retained publication refreshes once per accepted batch."
+    );
     println!("The snapshot deltas are harness observations, NOT native ECS change notifications.");
 }
 

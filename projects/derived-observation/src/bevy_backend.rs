@@ -177,7 +177,6 @@ impl BevyBackend {
         self.app.update();
     }
 
-
     /// Direct read from the native Bevy World; no cached output or notification.
     pub fn computed_packets(&self) -> BTreeMap<Key, Packet> {
         let world = self.app.world();
@@ -186,7 +185,10 @@ impl BevyBackend {
             .map(|(&slot, &entity)| {
                 let record = world.get::<ObjectRecord>(entity).expect("live object");
                 let material = world.get::<MaterialOf>(entity).expect("live relation").0;
-                let color = world.get::<MaterialColor>(material).expect("live material").0;
+                let color = world
+                    .get::<MaterialColor>(material)
+                    .expect("live material")
+                    .0;
                 (
                     Key {
                         slot,
