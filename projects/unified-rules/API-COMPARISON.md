@@ -340,6 +340,27 @@ under the same selected scoped interface, qualify failure semantics,
 and create equivalent public Bevy/RunenECS consumers before any performance
 or developer-ergonomics GO claim. Retain RULE-01/03/04/05/06/07 **HOLD**.
 
+## J — full game consumer through scoped compute (qualification candidate)
+
+`tests/scoped_game_consumer.rs` independently exercises the same
+`Engine::compute::<Each<T> / One<T>>` frontend as the invoice test, without
+altering the kernel or deleting legacy compatibility tests. The single application
+combines keyless monotonic steps, previous-commit movement, recursive hierarchy,
+reparenting and generational identity, keyed contact and keyless tick
+occurrences, and a global velocity reduction without a fabricated summary key.
+A separate 32-round / 24-record arithmetic and acyclic-tree reference challenges
+updates, parent redirection, absence of retroactive movement and global sums.
+Negative cases cover cycles, orphaned links, stale generations, rejected time,
+failed-computation rollback and preservation of the preceding event snapshot.
+
+**This is a source candidate pending exact-head execution**, not yet a proven
+result. Even a green result establishes scoped frontend *expressiveness* for
+two downstream workloads, not frontend simplicity, borrowed data, selective
+indexes, concurrent correctness, complete effects, or Bevy/RunenECS superiority.
+`Each<T>` currently delegates to the original `rule<T>` evaluator; no
+distinct runtime algorithm is claimed. A/B still lack complete own-frontend
+coverage. The architecture remains on HOLD.
+
 ## Mandatory next API architecture gate
 
 Candidate C establishes **keyed versus keyless computation identity** in

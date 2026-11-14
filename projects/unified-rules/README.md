@@ -300,6 +300,18 @@ world and rebuilds the reverse dependency index. No incremental grouping,
 borrowed store or durable I/O is established. The reminder request remains
 volatile and independently acknowledged, with no external execution proof.
 
+## Full scoped game consumer — independent qualification candidate
+
+`tests/scoped_game_consumer.rs` adds a separate same-`compute` game consumer
+using `Each<T>` and `One<T>` together: keyless fixed-step admission, movement,
+parent/child propagation, contact and global occurrences, and a global aggregate.
+It contains adversarial rollback/identity cases and an independent 32-step
+movement/hierarchy/reduction reference. It does not replace the existing
+legacy-`rule` consumer or assert any new kernel capability. The candidate
+requires exact-head CI before its evidence can be treated as passed.
+The user-facing callback still exposes `RuleCx`, while the internals retain
+whole-world cloning, serial recursion and whole-collection scans.
+
 ## Reproduce
 
 ```sh
