@@ -1,0 +1,56 @@
+name: Derived observation contract qualification
+
+on:
+  pull_request:
+    paths:
+      - "projects/derived-observation/**"
+      - ".github/workflows/derived-observation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Identify exact source
+        id: revision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) expected="$HEAD_SHA" ;;
+            workflow_dispatch) expected="$EVENT_SHA" ;;
+            *) exit 1 ;;
+          esac
+          test -n "$expected"
+          echo "expected=$expected" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.revision.outputs.expected }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify exact checkout
+        env:
+          EXPECTED: ${{ steps.revision.outputs.expected }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal --component clippy --component rustfmt
+      - name: Record versions
+        run: |
+          rustc -Vv
+          cargo --version
+          git rev-parse HEAD
+      - name: Rustfmt
+        run: cargo fmt --manifest-path projects/derived-observation/Cargo.toml --all -- --check
+      - name: Locked tests
+        run: cargo test --manifest-path projects/derived-observation/Cargo.toml --all-targets --locked
+      - name: Strict Clippy
+        run: cargo clippy --manifest-path projects/derived-observation/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Optimized oracle replay
+        run: cargo run --manifest-path projects/derived-observation/Cargo.toml --release --locked
