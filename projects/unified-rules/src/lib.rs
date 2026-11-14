@@ -31,6 +31,11 @@ pub enum Error {
     UnregisteredClock,
     InvalidClock,
     ScopeMismatch,
+    MissingComponent,
+    MutationOutsideAdmission,
+    DerivedReadDuringAdmission,
+    ConflictingWrite,
+    EventStorm,
 }
 
 trait Column {
@@ -281,6 +286,19 @@ struct CommittedRequest {
     value: Box<dyn Any>,
 }
 
+// Ingress and nested admission events use the same deterministic FIFO.
+// The event's owned value is never materialized as a persistent component.
+struct IncomingEvent {
+    ty: TypeId,
+    value: Box<dyn Any>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum MutationKind {
+    Update,
+    Replace,
+}
+
 type ClockValidator = dyn Fn(&World, &World) -> Result<(), Error>;
 struct ClockSpec {
     fact: Fact,
@@ -306,6 +324,8 @@ pub struct Transaction<'a> {
     world: &'a mut World,
     changed: &'a mut HashSet<Fact>,
     outputs: &'a HashMap<(TypeId, ProducerScope), usize>,
+    incoming: &'a mut VecDeque<IncomingEvent>,
+    events: &'a mut Vec<StagedEvent>,
 }
 /// Research-only transaction-scoped edit guard. The value is a staged clone:
 /// changes are written into the proposed world on guard drop, never directly
@@ -342,6 +362,22 @@ impl<T: Clone + Eq + 'static> Drop for Edit<'_, '_, T> {
 }
 
 impl<'world> Transaction<'world> {
+    /// Admit one occurrence into the current atomic transaction. Unlike a
+    /// source component, it will not remain in the committed World.
+    pub fn emit<T: Clone + 'static>(&mut self, event: T) -> Result<(), Error> {
+        let ordinal = u32::try_from(self.events.len()).map_err(|_| Error::Overflow)?;
+        self.incoming.push_back(IncomingEvent {
+            ty: TypeId::of::<T>(),
+            value: Box::new(event.clone()),
+        });
+        self.events.push(StagedEvent {
+            source: Task::singleton(usize::MAX),
+            ordinal,
+            value: Box::new(event),
+        });
+        Ok(())
+    }
+
     /// Read the staged source/derived value as a clone, including earlier edits.
     pub fn get<T: Clone + Eq + 'static>(&self, key: Key) -> Option<T> {
         self.world.get::<T>(key)
@@ -513,11 +549,13 @@ struct Rule {
 /// A typed scope is part of the output identity, not a special-purpose system.
 pub struct Each<T>(PhantomData<T>);
 pub struct One<T>(PhantomData<T>);
+/// A typed transient-occurrence activation scope, not a persistent output.
+pub struct On<T>(PhantomData<T>);
 
 /// Experimental single registration contract; keyed and keyless results share
 /// the same evaluator, dependency graph and transaction.
 pub trait OutputShape {
-    type At: Copy + 'static;
+    type At: 'static;
     type Value: Clone + Eq + 'static;
     fn install(
         engine: &mut Engine,
@@ -546,6 +584,34 @@ impl<T: Clone + Eq + 'static> OutputShape for One<T> {
     }
 }
 
+type EventFn = dyn for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, &dyn Any) -> Result<(), Error>;
+struct EventRule {
+    ty: TypeId,
+    evaluate: Rc<EventFn>,
+}
+impl<T: Clone + Eq + 'static> OutputShape for On<T> {
+    type At = T;
+    type Value = ();
+
+    fn install(
+        engine: &mut Engine,
+        f: impl for<'e, 'r> Fn(&mut RuleCx<'e, 'r>, T) -> Result<Option<()>, Error> + 'static,
+    ) -> Result<(), Error> {
+        if engine.committed_once {
+            return Err(Error::LateRegistration);
+        }
+        engine.event_rules.push(EventRule {
+            ty: TypeId::of::<T>(),
+            evaluate: Rc::new(move |cx, event| {
+                let typed = event.downcast_ref::<T>().ok_or(Error::ScopeMismatch)?.clone();
+                f(cx, typed)?;
+                Ok(())
+            }),
+        });
+        Ok(())
+    }
+}
+
 struct Evaluator<'r> {
     world: World,
     previous: &'r World,
@@ -554,6 +620,11 @@ struct Evaluator<'r> {
     clocks: &'r [ClockSpec],
     events: Vec<StagedEvent>,
     requests: Vec<StagedRequest>,
+    incoming: VecDeque<IncomingEvent>,
+    source_changes: HashSet<Fact>,
+    event_phase: bool,
+    current_writer: Option<(usize, usize)>,
+    write_claims: HashMap<Fact, ((usize, usize), MutationKind)>,
     invalidated: BTreeSet<Task>,
     done: BTreeSet<Task>,
     visiting: BTreeSet<Task>,
@@ -599,6 +670,47 @@ impl<T: Clone + Eq + 'static> ClockShape for One<T> {
 }
 
 impl Evaluator<'_> {
+    /// Admission handlers and derived calculations use the same staged world
+    /// and the same RuleCx; activation order is intentionally phase-separated.
+    /// Events are processed FIFO, then derived outputs run exactly once from
+    /// the final admitted source snapshot.
+    fn dispatch_events(&mut self, handlers: &[EventRule]) -> Result<(), Error> {
+        const MAX_EVENTS: usize = 4096; // Bounded research guard, not a production capacity claim.
+        self.event_phase = true;
+        let mut sequence = 0usize;
+        while let Some(event) = self.incoming.pop_front() {
+            if sequence >= MAX_EVENTS {
+                return Err(Error::EventStorm);
+            }
+            for (index, handler) in handlers.iter().enumerate() {
+                if handler.ty != event.ty {
+                    continue;
+                }
+                let f = Rc::clone(&handler.evaluate);
+                self.current_writer = Some((sequence, index));
+                let mut reads = HashSet::new();
+                let task = Task::singleton(
+                    self.rules.len().checked_add(index).ok_or(Error::Overflow)?,
+                );
+                let result = f(
+                    &mut RuleCx {
+                        evaluator: self,
+                        reads: &mut reads,
+                        task,
+                        next_ordinal: 0,
+                        next_request_ordinal: 0,
+                    },
+                    event.value.as_ref(),
+                );
+                self.current_writer = None;
+                result?;
+            }
+            sequence += 1;
+        }
+        self.event_phase = false;
+        Ok(())
+    }
+
     fn evaluate(&mut self, task: Task) -> Result<(), Error> {
         if matches!(task.at, TaskAt::Key(key) if !self.world.contains(key))
             || !self.invalidated.contains(&task)
@@ -637,6 +749,72 @@ pub struct RuleCx<'e, 'r> {
     next_request_ordinal: u32,
 }
 impl RuleCx<'_, '_> {
+    /// Only the occurrence-admission phase can mutate authoritative sources.
+    /// Derived computations remain read-only and cannot secretly create
+    /// nontermination by changing their own dependencies.
+    fn admission_transaction(&mut self) -> Result<Transaction<'_>, Error> {
+        if !self.evaluator.event_phase {
+            return Err(Error::MutationOutsideAdmission);
+        }
+        Ok(Transaction {
+            world: &mut self.evaluator.world,
+            changed: &mut self.evaluator.source_changes,
+            outputs: self.evaluator.by_type,
+            incoming: &mut self.evaluator.incoming,
+            events: &mut self.evaluator.events,
+        })
+    }
+
+    fn claim<T: 'static>(&mut self, key: Key, kind: MutationKind) -> Result<(), Error> {
+        let writer = self
+            .evaluator
+            .current_writer
+            .ok_or(Error::MutationOutsideAdmission)?;
+        let fact = Fact::of::<T>(key);
+        if let Some(&(other, earlier)) = self.evaluator.write_claims.get(&fact) {
+            if writer != other
+                && (kind == MutationKind::Replace || earlier == MutationKind::Replace)
+            {
+                return Err(Error::ConflictingWrite);
+            }
+        }
+        self.evaluator.write_claims.insert(fact, (writer, kind));
+        Ok(())
+    }
+
+    /// Deterministically compose occurrence-driven relative updates in FIFO
+    /// admission order. Relative updates are NOT proven commutative/parallel.
+    pub fn update<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+        change: impl FnOnce(&mut T),
+    ) -> Result<(), Error> {
+        self.claim::<T>(key, MutationKind::Update)?;
+        if !self.admission_transaction()?.update::<T>(key, change)? {
+            return Err(Error::MissingComponent);
+        }
+        Ok(())
+    }
+
+    /// Absolute writes from distinct admitted event handlers reject on
+    /// conflict rather than silently retaining the last writer.
+    pub fn put<T: Clone + Eq + 'static>(
+        &mut self,
+        key: Key,
+        value: T,
+    ) -> Result<(), Error> {
+        self.claim::<T>(key, MutationKind::Replace)?;
+        self.admission_transaction()?.put(key, value)
+    }
+
+    pub fn spawn(&mut self, key: Key) -> Result<(), Error> {
+        self.admission_transaction()?.spawn(key)
+    }
+
+    pub fn despawn(&mut self, key: Key) -> Result<(), Error> {
+        self.admission_transaction()?.despawn(key)
+    }
+
     pub fn exists(&mut self, key: Key) -> bool {
         self.reads.insert(Fact::of::<Exists>(key));
         self.evaluator.world.contains(key)
@@ -645,6 +823,9 @@ impl RuleCx<'_, '_> {
         let fact = Fact::of::<T>(key);
         self.reads.insert(fact);
         if let Some(&rule) = self.evaluator.by_type.get(&(fact.ty, ProducerScope::Each)) {
+            if self.evaluator.event_phase {
+                return Err(Error::DerivedReadDuringAdmission);
+            }
             if self.evaluator.rules[rule].singleton {
                 return Err(Error::ScopeMismatch);
             }
@@ -658,6 +839,9 @@ impl RuleCx<'_, '_> {
         let fact = Fact::singleton::<T>();
         self.reads.insert(fact);
         if let Some(&rule) = self.evaluator.by_type.get(&(fact.ty, ProducerScope::One)) {
+            if self.evaluator.event_phase {
+                return Err(Error::DerivedReadDuringAdmission);
+            }
             if !self.evaluator.rules[rule].singleton {
                 return Err(Error::ScopeMismatch);
             }
@@ -682,6 +866,9 @@ impl RuleCx<'_, '_> {
         let mut result = Vec::new();
         for key in keys {
             if let Some(&rule) = self.evaluator.by_type.get(&(ty, ProducerScope::Each)) {
+                if self.evaluator.event_phase {
+                    return Err(Error::DerivedReadDuringAdmission);
+                }
                 if self.evaluator.rules[rule].singleton {
                     return Err(Error::ScopeMismatch);
                 }
@@ -753,6 +940,12 @@ impl RuleCx<'_, '_> {
     pub fn emit<T: Clone + 'static>(&mut self, value: T) -> Result<(), Error> {
         let ordinal = self.next_ordinal;
         self.next_ordinal = self.next_ordinal.checked_add(1).ok_or(Error::Overflow)?;
+        if self.evaluator.event_phase {
+            self.evaluator.incoming.push_back(IncomingEvent {
+                ty: TypeId::of::<T>(),
+                value: Box::new(value.clone()),
+            });
+        }
         self.evaluator.events.push(StagedEvent {
             source: self.task,
             ordinal,
@@ -786,6 +979,7 @@ impl RuleCx<'_, '_> {
 pub struct Engine {
     world: World,
     rules: Vec<Rule>,
+    event_rules: Vec<EventRule>,
     by_type: HashMap<(TypeId, ProducerScope), usize>,
     clocks: Vec<ClockSpec>,
     events: Vec<StagedEvent>,
@@ -1106,15 +1300,45 @@ impl Engine {
     {
         let mut proposed = self.world.clone();
         let mut changes = HashSet::new();
+        let mut incoming = VecDeque::new();
+        let mut input_events = Vec::new();
         f(&mut Transaction {
             world: &mut proposed,
             changed: &mut changes,
             outputs: &self.by_type,
+            incoming: &mut incoming,
+            events: &mut input_events,
         })?;
-        // Validate all clocks before any (potentially failing) rule executes.
+
+        let mut evaluator = Evaluator {
+            world: proposed,
+            previous: &self.world,
+            rules: &self.rules,
+            by_type: &self.by_type,
+            clocks: &self.clocks,
+            events: input_events,
+            requests: Vec::new(),
+            incoming,
+            source_changes: changes,
+            event_phase: false,
+            current_writer: None,
+            write_claims: HashMap::new(),
+            invalidated: BTreeSet::new(),
+            done: BTreeSet::new(),
+            visiting: BTreeSet::new(),
+            dependencies: HashMap::new(),
+            insertions: HashSet::new(),
+            output_changes: HashMap::new(),
+        };
+
+        // All occurrence handlers run against staged sources before derived
+        // evaluation. Their mutations are validated and published together.
+        evaluator.dispatch_events(&self.event_rules)?;
         for clock in &self.clocks {
-            (clock.validate)(&self.world, &proposed)?;
+            (clock.validate)(&self.world, &evaluator.world)?;
         }
+        let proposed = &evaluator.world;
+        let mut changes = evaluator.source_changes.clone();
 
         // Despawned nodes have no tasks to evaluate in the staged world.
         // Preserve their prior derived values' removal facts explicitly.
@@ -1181,21 +1405,7 @@ impl Engine {
         // Re-evaluated rules may discover new dependencies. They use the
         // current staged world, with other invalidated derivations resolved
         // recursively, and reject dynamic cycles before commit.
-        let mut evaluator = Evaluator {
-            world: proposed,
-            previous: &self.world,
-            rules: &self.rules,
-            by_type: &self.by_type,
-            clocks: &self.clocks,
-            events: Vec::new(),
-            requests: Vec::new(),
-            invalidated,
-            done: BTreeSet::new(),
-            visiting: BTreeSet::new(),
-            dependencies: HashMap::new(),
-            insertions: HashSet::new(),
-            output_changes: HashMap::new(),
-        };
+        evaluator.invalidated = invalidated;
         let tasks: Vec<_> = evaluator.invalidated.iter().copied().collect();
         for task in tasks {
             evaluator.evaluate(task)?;
