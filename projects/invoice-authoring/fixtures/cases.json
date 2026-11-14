@@ -65,7 +65,7 @@
     "edit": {
       "kind": "price",
       "line": 11,
-      "value": "9223372036854775807"
+      "value": 9223372036854775807
     },
     "accepted": false,
     "error": "overflow",

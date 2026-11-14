@@ -56,7 +56,7 @@ impl Rejection {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Edit {
     Quantity { line: u32, value: i64 },

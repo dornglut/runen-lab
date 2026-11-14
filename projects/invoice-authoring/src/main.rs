@@ -57,6 +57,7 @@ fn check<B: NativeBackend>(mut backend: B, cases: &[Case], label: &str) {
             }
             Err(error) => {
                 assert!(!case.accepted, "{label}: rejected {}", case.name);
+                assert!(case.changes.is_empty(), "{label}: rejection emitted value delta");
                 assert_eq!(case.error.as_deref(), Some(error.id()), "{label}: error {}", case.name);
                 assert_eq!(backend.source(), before, "{label}: rejection mutated source");
             }
