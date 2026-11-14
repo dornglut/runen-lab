@@ -603,7 +603,10 @@ impl<T: Clone + Eq + 'static> OutputShape for On<T> {
         engine.event_rules.push(EventRule {
             ty: TypeId::of::<T>(),
             evaluate: Rc::new(move |cx, event| {
-                let typed = event.downcast_ref::<T>().ok_or(Error::ScopeMismatch)?.clone();
+                let typed = event
+                    .downcast_ref::<T>()
+                    .ok_or(Error::ScopeMismatch)?
+                    .clone();
                 f(cx, typed)?;
                 Ok(())
             }),
@@ -689,9 +692,8 @@ impl Evaluator<'_> {
                 let f = Rc::clone(&handler.evaluate);
                 self.current_writer = Some((sequence, index));
                 let mut reads = HashSet::new();
-                let task = Task::singleton(
-                    self.rules.len().checked_add(index).ok_or(Error::Overflow)?,
-                );
+                let task =
+                    Task::singleton(self.rules.len().checked_add(index).ok_or(Error::Overflow)?);
                 let result = f(
                     &mut RuleCx {
                         evaluator: self,
@@ -798,11 +800,7 @@ impl RuleCx<'_, '_> {
 
     /// Absolute writes from distinct admitted event handlers reject on
     /// conflict rather than silently retaining the last writer.
-    pub fn put<T: Clone + Eq + 'static>(
-        &mut self,
-        key: Key,
-        value: T,
-    ) -> Result<(), Error> {
+    pub fn put<T: Clone + Eq + 'static>(&mut self, key: Key, value: T) -> Result<(), Error> {
         self.claim::<T>(key, MutationKind::Replace)?;
         self.admission_transaction()?.put(key, value)
     }

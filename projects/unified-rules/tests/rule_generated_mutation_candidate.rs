@@ -65,9 +65,7 @@ fn health_percent(cx: &mut RuleCx<'_, '_>, key: Key) -> Result<Option<HealthPerc
     let Some(MaxHealth(max)) = cx.get::<MaxHealth>(key)? else {
         return Ok(None);
     };
-    Ok((max != 0).then(|| {
-        HealthPercent((u64::from(hp.min(max)) * 100 / u64::from(max)) as u32)
-    }))
+    Ok((max != 0).then(|| HealthPercent((u64::from(hp.min(max)) * 100 / u64::from(max)) as u32)))
 }
 
 fn dead(cx: &mut RuleCx<'_, '_>, key: Key) -> Result<Option<Dead>, Error> {
@@ -76,10 +74,7 @@ fn dead(cx: &mut RuleCx<'_, '_>, key: Key) -> Result<Option<Dead>, Error> {
 
 fn alive_count(cx: &mut RuleCx<'_, '_>) -> Result<Option<AliveCount>, Error> {
     Ok(Some(AliveCount(
-        cx.all::<Health>()?
-            .iter()
-            .filter(|(_, h)| h.0 > 0)
-            .count(),
+        cx.all::<Health>()?.iter().filter(|(_, h)| h.0 > 0).count(),
     )))
 }
 
@@ -113,7 +108,8 @@ fn seed(app: &mut Engine, target: Key) -> Result<(), Error> {
 }
 
 #[test]
-fn admitted_hit_mutates_source_and_propagates_all_derived_results_before_commit() -> Result<(), Error> {
+fn admitted_hit_mutates_source_and_propagates_all_derived_results_before_commit()
+-> Result<(), Error> {
     let target = Key::new(1, 1);
     let loot = Key::new(2, 1);
     let mut app = game()?;
@@ -149,7 +145,8 @@ fn admitted_hit_mutates_source_and_propagates_all_derived_results_before_commit(
 }
 
 #[test]
-fn failed_derived_evaluation_rolls_back_source_writes_spawn_events_and_effects() -> Result<(), Error> {
+fn failed_derived_evaluation_rolls_back_source_writes_spawn_events_and_effects() -> Result<(), Error>
+{
     let target = Key::new(4, 1);
     let loot = Key::new(5, 1);
     let mut app = game()?;
@@ -281,10 +278,7 @@ fn event_cycles_are_bounded_and_rejected_without_publication() -> Result<(), Err
         cx.emit(Loop)?;
         Ok(None)
     })?;
-    assert_eq!(
-        app.transact(|tx| tx.emit(Loop)),
-        Err(Error::EventStorm)
-    );
+    assert_eq!(app.transact(|tx| tx.emit(Loop)), Err(Error::EventStorm));
     assert!(app.occurrences::<Loop>().is_empty());
     Ok(())
 }
@@ -299,9 +293,7 @@ struct Charge {
     amount: i64,
 }
 fn charge(cx: &mut RuleCx<'_, '_>, c: Charge) -> Result<Option<()>, Error> {
-    let Money(before) = cx
-        .get::<Money>(c.invoice)?
-        .ok_or(Error::MissingComponent)?;
+    let Money(before) = cx.get::<Money>(c.invoice)?.ok_or(Error::MissingComponent)?;
     let after = before.checked_add(c.amount).ok_or(Error::Overflow)?;
     cx.update::<Money>(c.invoice, |money| {
         money.0 = after;
@@ -310,14 +302,17 @@ fn charge(cx: &mut RuleCx<'_, '_>, c: Charge) -> Result<Option<()>, Error> {
 }
 
 #[test]
-fn non_game_consumer_uses_the_same_registration_and_atomic_rule_generated_mutations() -> Result<(), Error> {
+fn non_game_consumer_uses_the_same_registration_and_atomic_rule_generated_mutations()
+-> Result<(), Error> {
     let mut app = Engine::new();
     app.compute::<On<Charge>>(charge)?;
     app.compute::<Each<DoubleMoney>>(|cx, key| {
         let Some(Money(money)) = cx.get::<Money>(key)? else {
             return Ok(None);
         };
-        Ok(Some(DoubleMoney(money.checked_mul(2).ok_or(Error::Overflow)?)))
+        Ok(Some(DoubleMoney(
+            money.checked_mul(2).ok_or(Error::Overflow)?,
+        )))
     })?;
     let invoice = Key::new(20, 1);
     app.transact(|tx| {
