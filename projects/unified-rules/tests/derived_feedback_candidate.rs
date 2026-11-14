@@ -265,9 +265,7 @@ fn a_second_derived_event_advances_another_feedback_wave_without_replaying_the_f
     })?;
     app.compute::<One<LootCount>>(|cx, ()| {
         let count = LootCount(cx.all::<Loot>()?.len());
-        if count == LootCount(1)
-            && cx.previous_singleton::<LootCount>() != Some(LootCount(1))
-        {
+        if count == LootCount(1) && cx.previous_singleton::<LootCount>() != Some(LootCount(1)) {
             cx.emit(Award(target))?;
         }
         Ok(Some(count))
