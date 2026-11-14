@@ -773,12 +773,11 @@ impl RuleCx<'_, '_> {
             .current_writer
             .ok_or(Error::MutationOutsideAdmission)?;
         let fact = Fact::of::<T>(key);
-        if let Some(&(other, earlier)) = self.evaluator.write_claims.get(&fact) {
-            if writer != other
-                && (kind == MutationKind::Replace || earlier == MutationKind::Replace)
-            {
-                return Err(Error::ConflictingWrite);
-            }
+        if let Some(&(other, earlier)) = self.evaluator.write_claims.get(&fact)
+            && writer != other
+            && (kind == MutationKind::Replace || earlier == MutationKind::Replace)
+        {
+            return Err(Error::ConflictingWrite);
         }
         self.evaluator.write_claims.insert(fact, (writer, kind));
         Ok(())
