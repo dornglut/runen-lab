@@ -55,11 +55,9 @@ impl<T> Relation<T> {
     }
 
     fn checked_sum(self, amount: impl Fn(&T) -> i64) -> Result<i64, Error> {
-        self.rows
-            .into_iter()
-            .try_fold(0_i64, |total, (_, value)| {
-                total.checked_add(amount(&value)).ok_or(Error::Overflow)
-            })
+        self.rows.into_iter().try_fold(0_i64, |total, (_, value)| {
+            total.checked_add(amount(&value)).ok_or(Error::Overflow)
+        })
     }
 
     fn group_sum(
@@ -110,7 +108,8 @@ fn invoice_composes_injected_functions_and_relations() -> Result<(), Error> {
     // Ordinary fallible function, inferred input types; the public registration
     // remains compute::<Each<_>>, not a competing derive method.
     app.compute::<Each<Amount>>(required2(|price: &Price, qty: &Quantity| {
-        price.0
+        price
+            .0
             .checked_mul(qty.0)
             .map(Amount)
             .ok_or(Error::Overflow)
@@ -289,8 +288,8 @@ fn game_composes_injected_functions_and_relations() -> Result<(), Error> {
     })?;
 
     app.compute::<One<SpeedSum>>(|cx, ()| {
-        let total = Relation::from_rows(cx.all::<Velocity>()?)
-            .checked_sum(|velocity| velocity.0)?;
+        let total =
+            Relation::from_rows(cx.all::<Velocity>()?).checked_sum(|velocity| velocity.0)?;
         Ok(Some(SpeedSum(total)))
     })?;
 
