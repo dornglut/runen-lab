@@ -794,6 +794,7 @@ fn comparable_game_contracts_have_identical_transaction_and_feedback_behavior() 
     for create in [
         register_game_a as fn(&mut Engine) -> Result<(), Error>,
         register_game_b,
+        register_game_c,
     ] {
         let mut app = Engine::new();
         create(&mut app)?;
@@ -856,6 +857,7 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
     for create in [
         register_invoice_a as fn(&mut Engine) -> Result<(), Error>,
         register_invoice_b,
+        register_invoice_c,
     ] {
         let mut app = Engine::new();
         create(&mut app)?;
@@ -908,4 +910,77 @@ fn comparable_invoice_contracts_have_identical_absence_failure_and_rollback_beha
         );
     }
     Ok(())
+}
+
+// Alternative C: leave pure Rust return values untouched, but distinguish
+// optional/fallible computation from persistent data with an explicit,
+// intentionally non-Eq outcome. This is a FRONTEND TEST, not a public contract.
+// A result wrapper must not accidentally satisfy the persistent output bounds
+// of the ordinary `Fn(&A) -> T` or `Fn(&A, &B) -> T` adapters.
+struct TaggedOutcome<T>(Result<Option<T>, Error>);
+struct Tagged1<A, O>(PhantomData<(A, O)>);
+struct Tagged2<A, B, O>(PhantomData<(A, B, O)>);
+
+impl<F, A, O> Install<Tagged1<A, O>> for F
+where
+    A: Clone + Eq + 'static,
+    O: Clone + Eq + 'static,
+    F: Fn(&A) -> TaggedOutcome<O> + 'static,
+{
+    fn install(self, app: &mut Engine) -> Result<(), Error> {
+        app.compute::<Each<O>>(move |cx, key| {
+            let Some(value) = cx.get::<A>(key)? else {
+                return Ok(None);
+            };
+            self(&value).0
+        })
+    }
+}
+impl<F, A, B, O> Install<Tagged2<A, B, O>> for F
+where
+    A: Clone + Eq + 'static,
+    B: Clone + Eq + 'static,
+    O: Clone + Eq + 'static,
+    F: Fn(&A, &B) -> TaggedOutcome<O> + 'static,
+{
+    fn install(self, app: &mut Engine) -> Result<(), Error> {
+        app.compute::<Each<O>>(move |cx, key| {
+            let Some(a) = cx.get::<A>(key)? else {
+                return Ok(None);
+            };
+            let Some(b) = cx.get::<B>(key)? else {
+                return Ok(None);
+            };
+            self(&a, &b).0
+        })
+    }
+}
+
+fn tagged_outstanding(amount: &Amount, paid: &Paid) -> TaggedOutcome<Outstanding> {
+    TaggedOutcome(outstanding(amount, paid).map(Some))
+}
+fn tagged_nonempty(doc: &Document) -> TaggedOutcome<Nonempty> {
+    TaggedOutcome(Ok(nonempty(doc)))
+}
+
+fn register_invoice_c(app: &mut Engine) -> Result<(), Error> {
+    // Compiles without specifying explicit marker generics, IF the custom
+    // output type is recognized as ineligible for the pure-output adapter.
+    app.register(line_amount)?;
+    app.register(tagged_outstanding)?;
+    app.register(tagged_nonempty)?;
+    app.register(pay)?;
+    app.register(outstanding_total)
+}
+fn register_game_c(app: &mut Engine) -> Result<(), Error> {
+    // No special result return is needed for ordinary pure/event functions.
+    app.clock_in::<One<Step>>((), |s| s.epoch)?;
+    app.register(health_percent)?;
+    app.register(is_dead)?;
+    app.register(movement)?;
+    app.register(world_position)?;
+    app.register(damage)?;
+    app.register(death_transition)?;
+    app.register(spawn_loot)?;
+    app.register(loot_count)
 }
