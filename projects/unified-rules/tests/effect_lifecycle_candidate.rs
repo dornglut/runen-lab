@@ -695,3 +695,92 @@ fn obsolete_queued_requests_retire_before_dispatch_without_leaking_outbox() -> R
     );
     Ok(())
 }
+
+
+#[test]
+fn rejected_cancellation_can_be_requested_again_as_new_work() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+    create(&mut engine, A, 4)?;
+    let start = pending(&engine, ticket(A, 4), CommandKind::Start);
+    assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
+    assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
+    let first_cancel = pending(&engine, ticket(A, 4), CommandKind::Cancel);
+    assert_eq!(executor.submit(&mut engine, first_cancel)?, Decision::Applied);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            first_cancel,
+            ticket(A, 4),
+            TerminalReport::CancelRejected,
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(phase(&engine, A), Some(Phase::Submitted));
+    assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
+    assert_eq!(phase(&engine, A), Some(Phase::CancelRequested));
+    let cancel_effects: Vec<_> = engine
+        .pending_effects::<WorkCommand>()
+        .into_iter()
+        .filter(|effect| effect.value.kind == CommandKind::Cancel)
+        .collect();
+    assert_eq!(
+        cancel_effects.len(),
+        1,
+        "a second cancellation must stage a new command, not just change status"
+    );
+    assert_ne!(cancel_effects[0].id, first_cancel);
+    Ok(())
+}
+
+#[test]
+fn accepted_cancellation_retires_start_without_waiting_for_late_completion() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+    create(&mut engine, A, 4)?;
+    let start = pending(&engine, ticket(A, 4), CommandKind::Start);
+    assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
+    assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
+    let cancellation = pending(&engine, ticket(A, 4), CommandKind::Cancel);
+    assert_eq!(executor.submit(&mut engine, cancellation)?, Decision::Applied);
+    assert_eq!(
+        executor.report(
+            &mut engine,
+            cancellation,
+            ticket(A, 4),
+            TerminalReport::Cancelled,
+        )?,
+        Decision::Applied
+    );
+    assert_eq!(phase(&engine, A), Some(Phase::Cancelled));
+    assert!(
+        engine.pending_effects::<WorkCommand>().is_empty(),
+        "successful cancellation must retire the original Start request too"
+    );
+    assert_eq!(
+        executor.report(&mut engine, start, ticket(A, 4), TerminalReport::Completed)?,
+        Decision::NotPending
+    );
+    Ok(())
+}
+
+#[test]
+fn successful_start_result_retires_unsubmitted_cancel_request() -> Result<(), Error> {
+    let mut engine = app()?;
+    let mut executor = FakeExecutor::default();
+    create(&mut engine, A, 4)?;
+    let start = pending(&engine, ticket(A, 4), CommandKind::Start);
+    assert_eq!(executor.submit(&mut engine, start)?, Decision::Applied);
+    assert_eq!(cancel(&mut engine, A, 4)?, Decision::Applied);
+    assert_eq!(engine.pending_effects::<WorkCommand>().len(), 2);
+    assert_eq!(
+        executor.report(&mut engine, start, ticket(A, 4), TerminalReport::Completed)?,
+        Decision::Applied
+    );
+    assert_eq!(phase(&engine, A), Some(Phase::Completed));
+    assert!(
+        engine.pending_effects::<WorkCommand>().is_empty(),
+        "terminal operation must reconcile pending cancellation"
+    );
+    Ok(())
+}
