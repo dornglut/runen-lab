@@ -16,9 +16,16 @@ cargo run --locked
 ```
 
 Use the Rust toolchain selected by the repository `rust-toolchain.toml`.
-The application pins accepted Runenwerk `b4683b99939464c3bc79e85f04c752687f01bc86` and uses its explicit
-`UiRuntimeFontConfiguration::with_system_fonts()` policy rather than a Windows-only font-file path.
-This is a temporary accepted-API consumer baseline, **not** the future fluent App-model cutover.
+
+**Temporary native profiler candidate for [Lab #17](https://github.com/dornglut/runen-lab/issues/17): not an accepted dependency or a merge-ready Todo revision.** This branch alone pins Runenwerk `c5ac69ead587bea6419955eaae036529889132ea` from unmerged [Runenwerk PR #1498](https://github.com/dornglut/runenwerk/pull/1498) (which depends on unmerged profiler backend [PR #1495](https://github.com/dornglut/runenwerk/pull/1495)). The ordinary [Todo PR #8](https://github.com/dornglut/runen-lab/pull/8) continues to use accepted Runenwerk `b4683b99939464c3bc79e85f04c752687f01bc86` and remains unchanged.
+
+From this Todo directory, build and launch the actual native application with its first-party profiler:
+
+```sh
+cargo run --release --locked -- --profile
+```
+
+Close the window normally; Runenwerk prints the location of the self-contained `report.html` and source-owned `capture.json` under `target/runenwerk/profiles/<session>/`. Ordinary launches do not enable profiling. The branch only updates the pinned Engine dependency and Cargo-resolved lockfile; it does not alter Todo behavior. Hosted Linux source/native validation does **not** certify a Windows GPU performance result, input correctness, or observer overhead. The Engine must become accepted authority before a maintained Todo dependency repin can merge.
 Native display/input/resize/shutdown still require physical platform qualification; compilation
 and unit tests alone do **not** establish that the GUI works.
 
