@@ -36,6 +36,30 @@ trap cleanup EXIT
 
 fail() {
   echo "todo_native_x11=fail stage=$1" >&2
+  # Only in the provisional profiler experiment: close the still-live
+  # failing application through the original WM path to preserve its real
+  # M13 evidence. Never change the failure outcome or replay its input.
+  if [[ -n "${RUNEN_LAB_TODO_PROFILE_ROOT:-}" && -n "$todo_pid" && -n "$window" ]] &&
+     kill -0 "$todo_pid" 2>/dev/null; then
+    if timeout 2s xdotool windowfocus --sync "$window" >/dev/null 2>&1 &&
+       timeout 2s xdotool key --clearmodifiers Alt+F4 >/dev/null 2>&1; then
+      for _ in $(seq 1 80); do
+        if ! kill -0 "$todo_pid" 2>/dev/null; then
+          close_status=0
+          wait "$todo_pid" || close_status=$?
+          todo_pid=""
+          echo "todo_native_x11=diagnostic failed_session_wm_close_exit=$close_status" >&2
+          break
+        fi
+        sleep 0.1
+      done
+    fi
+    if [[ -s "${RUNEN_LAB_TODO_PROFILE_ROOT}/todo-${run}.json" ]]; then
+      echo "todo_native_x11=diagnostic failed_session_profile_captured=true" >&2
+    else
+      echo "todo_native_x11=diagnostic failed_session_profile_captured=false" >&2
+    fi
+  fi
   for log in "$scratch"/todo-*.log; do
     if [[ -f "$log" ]]; then
       echo "=== Todo process log: $(basename "$log") ===" >&2
